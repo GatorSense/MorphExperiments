@@ -18,7 +18,8 @@ from MNN_New2D import MNN
 #from MultiMNN import MulMNN
 from time import time
 import matplotlib.pyplot as plt
-
+from comet_ml import start
+from comet_ml.integration.pytorch import log_model
 
 start_whole = time()
 # Training settings
@@ -42,10 +43,10 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-torch.manual_seed(args.seed)
-#torch.initial_seed()
-if args.cuda:
-    torch.cuda.manual_seed(args.seed)
+# torch.manual_seed(args.seed)
+# #torch.initial_seed()
+# if args.cuda:
+#     torch.cuda.manual_seed(args.seed)
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
@@ -68,19 +69,19 @@ class Net(nn.Module):
     def __init__(self):
         super(Net,self).__init__()
         self.MNN1 = MNN(1,10,5)
-        #self.conv1 = nn.Conv2d(2, 4, kernel_size=5)
+        self.conv1 = nn.Conv2d(1, 20, kernel_size=5)
         self.MNN2 = MNN(10,5,5)
         #self.MNN3 = MNN(5,1,5)
-        #self.conv2 = nn.Conv2d(8, 16, kernel_size=5)
-        self.fc1 = nn.Linear(1800,100)
+        self.conv2 = nn.Conv2d(20, 10, kernel_size=5)
+        self.fc1 = nn.Linear(360,100)
         self.fc2 = nn.Linear(100,10)
     
     def forward(self,x):
         #import pdb; pdb.set_trace()
         output = F.max_pool2d(x,2)
-        output = self.MNN1(output)
+        output = self.conv1(output)
         #output = F.max_pool2d(output,2)
-        output = self.MNN2(output)
+        output = self.conv2(output)
         #output = self.MNN3(output)
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
@@ -143,10 +144,17 @@ def test():
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
     return correct
 
+experiment = start(
+  api_key="ACmLuj8t9U7VuG1PAr1yksnM2",
+  project_name="morphological",
+  workspace="joannekim"
+)
+
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
     accuracy[epoch] = test()
+    experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
 
 accuracy /= 100
 print(accuracy.max(0))
