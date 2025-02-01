@@ -18,17 +18,11 @@ from MNN_New2D import MNN
 #from MultiMNN import MulMNN
 from time import time
 import matplotlib.pyplot as plt
-# import wandb
-from comet_ml import start
-from comet_ml.integration.pytorch import log_model
-import os
 
 
 start_whole = time()
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST with MNNV2')
-parser.add_argument('--name', type=str, default="name",
-                    help='name of experiment in comet_ml')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
@@ -53,37 +47,6 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
-# WANDB=False
-
-# if WANDB:
-#     # Initialize wandb for experiment tracking
-#     wandb.init(project="MCNN", name=args.name)
-
-#     # Log hyperparameters to wandb
-#     wandb.config.update({
-#         "name": args.name,
-#         "batch_size": args.batch_size,
-#         "epochs": args.epochs,
-#         "learning_rate": args.lr,
-#         "momentum": args.momentum 
-#     })
-
-
-experiment = start(
-  api_key=os.environ.get("COMET_API_KEY"),
-  project_name="mnn",
-  workspace="joanne5548"
-)
-
-parameters = {
-    'batch_size': args.batch_size,
-    'learning_rate': args.lr,
-    'epochs': args.epochs,
-    'momentum': args.momentum
-}
-
-experiment.log_parameters(parameters)
-
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 train_loader = torch.utils.data.DataLoader(
@@ -101,57 +64,29 @@ test_loader = torch.utils.data.DataLoader(
                    ])),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
-# class Net(nn.Module):
-#     def __init__(self):
-#         super(Net,self).__init__()
-#         self.MNN1 = MNN(1,10,5)
-#         #self.conv1 = nn.Conv2d(2, 4, kernel_size=5)
-#         self.MNN2 = MNN(10,1,5)
-#         #self.MNN3 = MNN(5,1,5)
-#         #self.conv2 = nn.Conv2d(8, 16, kernel_size=5)
-#         self.fc1 = nn.Linear(360,100)
-#         self.fc2 = nn.Linear(100,10)
-    
-#     def forward(self,x):
-#         #import pdb; pdb.set_trace()
-#         output = F.max_pool2d(x,2)
-#         output = self.MNN1(output)
-#         #output = F.max_pool2d(output,2)
-#         output = self.MNN2(output)
-#         #output = self.MNN3(output)
-#         output = output.view(-1,360)
-#         output = F.relu(self.fc1(output))
-#         #output = F.dropout(output, training=self.training)
-#         output = self.fc2(output)
-#         return F.log_softmax(output,1)
-
 class Net(nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
-        self.MNN1 = MNN(1, 10, 5)
-        self.CNN1 = nn.Conv2d(1, 10, 5)
-        self.MNN2 = MNN(10, 5, 5)
-        self.CNN2 = nn.Conv2d(10, 5, 5)
-        self.fc1 = nn.Linear(800, 100)
-        self.fc2 = nn.Linear(100, 10)
-
-    def forward(self, x):
-        # First layer
-        x = self.MNN1(x)
-        # x = self.CNN1(x)
-        x = F.max_pool2d(x, 2)
-
-        # Second layer
-        x = self.MNN2(x)
-        # x = self.CNN2(x)
-        x = F.max_pool2d(x, 2)
-
-        # Flatten the features
-        x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
-
+        super(Net,self).__init__()
+        self.MNN1 = MNN(1,10,5)
+        #self.conv1 = nn.Conv2d(2, 4, kernel_size=5)
+        self.MNN2 = MNN(10,5,5)
+        #self.MNN3 = MNN(5,1,5)
+        #self.conv2 = nn.Conv2d(8, 16, kernel_size=5)
+        self.fc1 = nn.Linear(1800,100)
+        self.fc2 = nn.Linear(100,10)
+    
+    def forward(self,x):
+        #import pdb; pdb.set_trace()
+        output = F.max_pool2d(x,2)
+        output = self.MNN1(output)
+        #output = F.max_pool2d(output,2)
+        output = self.MNN2(output)
+        #output = self.MNN3(output)
+        output = output.view(output.size(0), -1)
+        output = F.relu(self.fc1(output))
+        #output = F.dropout(output, training=self.training)
+        output = self.fc2(output)
+        return F.log_softmax(output,1)
 
 model = Net()
 if args.cuda:
@@ -212,8 +147,6 @@ accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
     accuracy[epoch] = test()
-    # wandb.log({"epoch" : epoch, "accuracy" : accuracy[epoch]})
-    log_model(experiment, model=model, model_name="MCNN")
 
 accuracy /= 100
 print(accuracy.max(0))

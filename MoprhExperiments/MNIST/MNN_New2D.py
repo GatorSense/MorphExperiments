@@ -18,7 +18,6 @@ class _Hitmiss(Function):
     
     def forward(self, input, K_hit, K_miss, kernel_size, out_channels):
         #import pdb; pdb.set_trace()
-        input = input.cuda()
         batch_size, in_channels, ih, iw = input.size() #dimensions of input image
         fh = ih - kernel_size + 1 #size of feature map
         out_Fmap = in_channels*out_channels
@@ -26,7 +25,7 @@ class _Hitmiss(Function):
         input = input.unfold(2, kernel_size, 1).unfold(3, kernel_size, 1).permute(0,2,3,1,4,5) # break whole image to blocks
 
         F_map = Variable(torch.zeros(batch_size, out_channels, num_blocks, 1, 1))  
-
+        input = input.cuda()
         for i in range (out_channels):
             F_hit = (input-K_hit[i])*-1
             F_hit = F_hit.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)     # reshape tensor to be 5 dimension for max_pool3D function

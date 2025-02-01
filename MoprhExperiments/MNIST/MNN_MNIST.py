@@ -13,8 +13,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.autograd
 from torch.autograd import Variable
-from pytorch.hit_pytorch import Hit
-from pytorch. miss_pytorch import Miss
+from hit_pytorch import Hit
+from miss_pytorch import Miss
 import matplotlib.pyplot as plt
 from time import time
 
