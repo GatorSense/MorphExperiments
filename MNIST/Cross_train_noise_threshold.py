@@ -50,7 +50,15 @@ for i in range(2000):
     x[i][tag_x[i]+1,tag_y[i]] += 1
 
     # rectangle?
-    x[i][tag_x[i]-1:tag_x[i]+2,tag_y[i]+4:tag_y[i]+7] += 1
+    # x[i][tag_x[i]-1:tag_x[i]+2,tag_y[i]+4:tag_y[i]+7] += 1
+
+sample = x[0].cpu().numpy()
+
+# Plot the sample using Matplotlib
+plt.imshow(sample, cmap='gray')
+plt.colorbar()
+plt.title(f"Sample {0}")
+plt.savefig('./only_cross.png') 
 
 #==============================================================================
 #cross with half T
@@ -153,7 +161,7 @@ momentum_miss = 0
 loss_last = Variable(torch.zeros(1).type(dtype),requires_grad=False)
 
 experiment = start(
-  api_key=os.environ.get("COMET_API_KEY"),
+#   api_key=os.environ.get("COMET_API_KEY"),
   project_name="morphological",
   workspace="joannekim"
 )

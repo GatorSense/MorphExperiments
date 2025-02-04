@@ -142,7 +142,7 @@ experiment = start(
   workspace="joannekim"
 )
 
-experiment.set_name("Cross With Square v.2")
+experiment.set_name("Cross With Square (cross_noise)")
 
 start_train = time()
 for i in range(100):
@@ -193,7 +193,7 @@ for k in range (1000,2000):
 
 accuracy = count/1000
 print (accuracy)
-experiment.log_metric("Accuracy", accuracy)
+experiment.log_metric("Accuracy", accuracy*100)
 
 stop_whole = time()       
 print('==== Whole Time ====', str(stop_whole-start_whole))   

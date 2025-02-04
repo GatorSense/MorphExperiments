@@ -21,6 +21,9 @@ from numpy import unravel_index
 from hit_pytorch import Hit
 from miss_pytorch import Miss
 import matplotlib.pyplot as plt
+from comet_ml import start
+from comet_ml.integration.pytorch import log_model
+import os
 
 dtype = torch.FloatTensor
 
@@ -141,6 +144,14 @@ momentum_hit = 0
 momentum_miss = 0
 loss_last = Variable(torch.zeros(1).type(dtype),requires_grad=False)
 
+experiment = start(
+  api_key=os.environ.get("COMET_API_KEY"),
+  project_name="morphological",
+  workspace="joannekim"
+)
+
+experiment.set_name("Cross With Square (cross_noise_threshold)")
+
 for i in range(100000):
 #while True:
     
@@ -166,6 +177,7 @@ for i in range(100000):
     
         print('==== i ====\n', i)
         print('==== loss ====\n', loss) 
+        experiment.log_metric("Loss", loss.item(), i)
     
     if abs(loss_last.data[0]-temp.data[0]) < 0.0005:
         break
@@ -195,6 +207,7 @@ for k in range (1000,2000):
 
 accuracy = count/1000
 print (accuracy)
+experiment.log_metric("Accuracy", accuracy*100)
         
 plt.figure(6)
 plt.imshow(hit_train.data.numpy(),cmap='gray')
