@@ -164,4 +164,8 @@ print('==== Whole Time ====', str(stop_whole-start_whole))
 plt.figure()
 plt.plot(accuracy[1:].numpy())
 plt.xlabel('Epoch')
+<<<<<<< HEAD
 plt.ylabel('Accuracy (%)')
+=======
+plt.ylabel('Accuracy (%)')
+>>>>>>> 3c8fc1f93e7f3ddf43d0599f2efb4be18f008dcf

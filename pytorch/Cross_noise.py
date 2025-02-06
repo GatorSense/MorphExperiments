@@ -22,6 +22,9 @@ from hit_pytorch import Hit
 from miss_pytorch import Miss
 import matplotlib.pyplot as plt
 from time import time
+from comet_ml import start
+from comet_ml.integration.pytorch import log_model
+import os
 
 start_whole = time()
 
@@ -33,18 +36,19 @@ dtype = torch.FloatTensor
 tag_x = np.random.randint(3, size=(2000)) + 1
 tag_y = np.random.randint(3, size=(2000)) + 1
 
+# Is this supposed to be 7x7?
 x = torch.zeros(2000,5,10).type(dtype)
 
 #generate 3x3 cross in tag place with different intensity
 
 #==============================================================================
 # #cross with square
-# for i in range(2000):
-#     x[i] = x[i] + torch.randn(5,10) * 0.01
-#     x[i][tag_x[i],tag_y[i]-1:tag_y[i]+2] += 1
-#     x[i][tag_x[i]-1,tag_y[i]] += 1
-#     x[i][tag_x[i]+1,tag_y[i]] += 1
-#     x[i][tag_x[i]-1:tag_x[i]+2,tag_y[i]+4:tag_y[i]+7] += 1
+for i in range(2000):
+    x[i] = x[i] + torch.randn(5,10) * 0.01
+    x[i][tag_x[i],tag_y[i]-1:tag_y[i]+2] += 1
+    x[i][tag_x[i]-1,tag_y[i]] += 1
+    x[i][tag_x[i]+1,tag_y[i]] += 1
+    x[i][tag_x[i]-1:tag_x[i]+2,tag_y[i]+4:tag_y[i]+7] += 1
 #==============================================================================
 
 #==============================================================================
@@ -79,13 +83,13 @@ x = torch.zeros(2000,5,10).type(dtype)
 #==============================================================================
 
 #cross with a rotated T
-for i in range(2000):
-    x[i] = x[i] + torch.randn(5,10) * 0.01
-    x[i][tag_x[i],tag_y[i]-1:tag_y[i]+2] += 1
-    x[i][tag_x[i]-1,tag_y[i]] += 1
-    x[i][tag_x[i]+1,tag_y[i]] += 1
-    x[i][tag_x[i]-1, tag_y[i]+4:tag_y[i]+7] = 1
-    x[i][tag_x[i]:tag_x[i]+2,tag_y[i]+5] += 1
+# for i in range(2000):
+#     x[i] = x[i] + torch.randn(5,10) * 0.01
+#     x[i][tag_x[i],tag_y[i]-1:tag_y[i]+2] += 1
+#     x[i][tag_x[i]-1,tag_y[i]] += 1
+#     x[i][tag_x[i]+1,tag_y[i]] += 1
+#     x[i][tag_x[i]-1, tag_y[i]+4:tag_y[i]+7] = 1
+#     x[i][tag_x[i]:tag_x[i]+2,tag_y[i]+5] += 1
     
     
 for j in range(5):
@@ -116,7 +120,7 @@ Miss = Miss()
 # generate true output for each image
 y = Variable(torch.zeros(2000,3,8).type(dtype),requires_grad=False)
 for j in range (2000):
-        y[j] = Hit.forward(images[j], K_Hit) - Miss.forward(images[j], K_Miss)
+    y[j] = Hit.forward(images[j], K_Hit) - Miss.forward(images[j], K_Miss)
 
 # Train hit and miss filter        
 # initiate the K_hit and K_miss filter     
@@ -132,6 +136,14 @@ learning_rate = 1e-2
 momentum_hit = 0
 momentum_miss = 0
 
+experiment = start(
+  api_key=os.environ.get("COMET_API_KEY"),
+  project_name="morphological",
+  workspace="joannekim"
+)
+
+experiment.set_name("Cross With Square (cross_noise)")
+
 start_train = time()
 for i in range(100):
     loss = 0
@@ -141,7 +153,7 @@ for i in range(100):
         result = Hit.forward(images[j], hit_train) - Miss.forward(images[j], miss_train)
         loss += 0.5 * (result - y[j]).pow(2).sum()/1000
     
-    print(loss)
+    # print(loss)
 
          
     loss.backward()
@@ -152,13 +164,16 @@ for i in range(100):
     hit_train.grad.data.zero_()
     miss_train.grad.data.zero_()
 #==============================================================================
-#     if i % 5 == 0:
-#     
-#         print(i, loss)
+    if i % 5 == 0:
+    
+        print(i, loss)
+        experiment.log_metric("Loss", loss.item(), i)
 #==============================================================================
 stop_train = time()
 print('==== Training Time ====', str(stop_train-start_train))
 
+# test set is supposed to be compromised of 150 images of each class...
+# so why is this just from image index 1000 to 2000?
 # test set
 count = 0
 for k in range (1000,2000):
@@ -178,6 +193,7 @@ for k in range (1000,2000):
 
 accuracy = count/1000
 print (accuracy)
+experiment.log_metric("Accuracy", accuracy*100)
 
 stop_whole = time()       
 print('==== Whole Time ====', str(stop_whole-start_whole))   
