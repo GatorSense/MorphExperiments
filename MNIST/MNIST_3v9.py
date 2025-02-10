@@ -23,7 +23,6 @@ from comet_ml.integration.pytorch import log_model
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
-import pandas as pd
 
 start_whole = time()
 # Training settings
@@ -69,8 +68,14 @@ idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 
 train_subset_3 = Subset(train_dataset, idx_3)
 
-black_images_train = torch.zeros(6000, 1, 28, 28)
-black_images_train += 0.1 * torch.randn_like(black_images_train)
+idx_9 = (targets == 9).nonzero(as_tuple=True)[0]
+
+train_subset_9 = Subset(train_dataset, idx_9)
+
+# black_images_train = torch.zeros(6000, 1, 28, 28)
+# black_images_train += 0.1 * torch.randn_like(black_images_train)
+
+black_images_train = train_subset_9
 
 class BlackAndThrees(Dataset):
     def __init__(self, black_imgs, threes):
@@ -85,7 +90,8 @@ class BlackAndThrees(Dataset):
             image, _ = self.threes[index]
             return image, 1
         else:
-            return self.black_imgs[index - len(self.threes)], 0
+            image, _ = self.black_imgs[index - len(self.threes)]
+            return image, 0
         
 train_loader = DataLoader(BlackAndThrees(black_images_train, train_subset_3), 
                           args.batch_size, shuffle=True, **kwargs)
@@ -178,7 +184,7 @@ def test():
 
     # Store counts predicted as 3 for each digits
     pred_dict = {"0": [0, 0], "1": [0, 0], "2": [0, 0], "3": [0, 0], "4": [0, 0], "5": [0, 0], "6": [0, 0], "7": [0, 0], "8": [0, 0], "9": [0, 0]}
-
+    
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -206,7 +212,7 @@ def test():
 
             # predicted as 3
             if pred_np[i] == 1:
-                pred_dict[digit][0] += 1
+                pred_dict[digit][pred_np[i]] += 1
             # not predicted as 3
             else:
                 pred_dict[digit][1] += 1
@@ -223,15 +229,9 @@ def test():
         labels=["Not Three", "Three"],
     )
 
-    pred_df = pd.DataFrame(columns=['Label', 'Three', 'Not Three'])
-    # pred_df["Label"] = pred_dict.keys()
-    
-    for key in pred_dict.keys():
-        pred_df.loc[len(pred_df)] = [key, pred_dict[key][0], pred_dict[key][1]]
-
     stop_test = time()
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
-    return correct, pred_df
+    return correct, pred_dict
 
 experiment = start(
   api_key="ACmLuj8t9U7VuG1PAr1yksnM2",
@@ -240,19 +240,17 @@ experiment = start(
 )
 
 # Make list of empty dict to store predicted labels
-# keys = [str(n) for n in range(10)]
-# pred_dict = [{key: 0 for key in keys} for _ in range(args.epochs+1)]
-pred_df_list = []
+keys = [str(n) for n in range(10)]
+pred_dict = [{key: 0 for key in keys} for _ in range(args.epochs+1)]
 
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
-    accuracy[epoch], pred_df = test()
-    pred_df_list.append(pred_df)
+    accuracy[epoch], pred_dict[epoch] = test()
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
 
 # Log the last predicted label
-experiment.log_table("pred_label_digit.csv", pred_df_list[args.epochs-1]) # result from last epoch
+experiment.log_metric("Predicted label for each digits", pred_dict[args.epochs]) # result from last epoch
 
 accuracy /= 100
 print(accuracy.max(0))

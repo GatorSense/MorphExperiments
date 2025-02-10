@@ -23,7 +23,6 @@ from comet_ml.integration.pytorch import log_model
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
-import pandas as pd
 
 start_whole = time()
 # Training settings
@@ -66,28 +65,33 @@ train_dataset = datasets.MNIST(
 
 targets = train_dataset.targets
 idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
-
 train_subset_3 = Subset(train_dataset, idx_3)
+idx_9 = (targets == 9).nonzero(as_tuple=True)[0]
+train_subset_9 = Subset(train_dataset, idx_9)
 
 black_images_train = torch.zeros(6000, 1, 28, 28)
 black_images_train += 0.1 * torch.randn_like(black_images_train)
 
-class BlackAndThrees(Dataset):
-    def __init__(self, black_imgs, threes):
-        self.black_imgs = black_imgs
+class BlackAnd3And9(Dataset):
+    def __init__(self, sixes, threes, nines):
+        self.sixes = sixes
         self.threes = threes
+        self.nines = nines
     
     def __len__(self):
-        return len(self.black_imgs) + len(self.threes)
+        return len(self.sixes) + len(self.threes) + len(self.nines)
     
     def __getitem__(self, index):
-        if index < len(self.threes):
-            image, _ = self.threes[index]
+        if index < len(self.nines):
+            image, _ = self.nines[index]
             return image, 1
+        elif index < len(self.threes) + len(self.nines):
+            image, _ = self.threes[index - len(self.nines)]
+            return image, 0
         else:
-            return self.black_imgs[index - len(self.threes)], 0
+            return self.black_imgs[index - len(self.threes) - len(self.nines)], 2
         
-train_loader = DataLoader(BlackAndThrees(black_images_train, train_subset_3), 
+train_loader = DataLoader(BlackAnd3And9(black_images_train, train_subset_3, train_subset_9), 
                           args.batch_size, shuffle=True, **kwargs)
     
 test_loader = torch.utils.data.DataLoader(
@@ -127,7 +131,7 @@ class Net(nn.Module):
         self.morph = MorphNet()
         self.conv = ConvNet()
         self.fc1 = nn.Linear(2160,100)
-        self.fc2 = nn.Linear(100,2)
+        self.fc2 = nn.Linear(100,3)
     
     def forward(self,x):
         m_output = self.morph(x.cuda()).cuda()
@@ -176,9 +180,18 @@ def test():
     test_loss = 0
     correct = 0
 
-    # Store counts predicted as 3 for each digits
-    pred_dict = {"0": [0, 0], "1": [0, 0], "2": [0, 0], "3": [0, 0], "4": [0, 0], "5": [0, 0], "6": [0, 0], "7": [0, 0], "8": [0, 0], "9": [0, 0]}
-
+    # Store counts predicted as 3 and 9 for each digits
+    pred_dict = {"0": [0, 0, 0], 
+                 "1": [0, 0, 0], 
+                 "2": [0, 0, 0], 
+                 "3": [0, 0, 0], 
+                 "4": [0, 0, 0], 
+                 "5": [0, 0, 0], 
+                 "6": [0, 0, 0], 
+                 "7": [0, 0, 0], 
+                 "8": [0, 0, 0], 
+                 "9": [0, 0, 0]}
+    
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -187,29 +200,28 @@ def test():
         # Get original target to determine actual number
         original_target = target.cpu().detach().numpy()
 
+        target = torch.where((target != 3) & (target != 9), 
+                             torch.tensor(2, device=target.device),
+                             target)
         target = torch.where(target == 3, 
-                             torch.tensor(1, device=target.device), 
-                             torch.tensor(0, device=target.device))
+                             torch.tensor(0, device=target.device),
+                             target)
+        target = torch.where(target == 9, 
+                             torch.tensor(1, device=target.device),
+                             target)
         
         output = model(data)
         target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
         output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
         test_loss += F.nll_loss(output, target, size_average=False).item() # sum up batch loss
         pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
-        #print(pred)
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
         # store predicted labels in the dict
         pred_np = pred.cpu().detach().numpy().flatten()
         for i in range(len(original_target)):
             digit = str(original_target[i])
-
-            # predicted as 3
-            if pred_np[i] == 1:
-                pred_dict[digit][0] += 1
-            # not predicted as 3
-            else:
-                pred_dict[digit][1] += 1
+            pred_dict[digit][pred_np[0]] += 1
 
     test_loss /= len(test_loader.dataset)
 
@@ -220,18 +232,12 @@ def test():
     experiment.log_confusion_matrix(
         y_true=target_total,
         y_predicted=output_total,
-        labels=["Not Three", "Three"],
+        labels=["3", "9", "Other"],
     )
-
-    pred_df = pd.DataFrame(columns=['Label', 'Three', 'Not Three'])
-    # pred_df["Label"] = pred_dict.keys()
-    
-    for key in pred_dict.keys():
-        pred_df.loc[len(pred_df)] = [key, pred_dict[key][0], pred_dict[key][1]]
 
     stop_test = time()
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
-    return correct, pred_df
+    return correct, pred_dict
 
 experiment = start(
   api_key="ACmLuj8t9U7VuG1PAr1yksnM2",
@@ -240,19 +246,17 @@ experiment = start(
 )
 
 # Make list of empty dict to store predicted labels
-# keys = [str(n) for n in range(10)]
-# pred_dict = [{key: 0 for key in keys} for _ in range(args.epochs+1)]
-pred_df_list = []
+keys = [str(n) for n in range(10)]
+pred_dict = [{key: 0 for key in keys} for _ in range(args.epochs+1)]
 
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
-    accuracy[epoch], pred_df = test()
-    pred_df_list.append(pred_df)
+    accuracy[epoch], pred_dict[epoch] = test()
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
 
 # Log the last predicted label
-experiment.log_table("pred_label_digit.csv", pred_df_list[args.epochs-1]) # result from last epoch
+experiment.log_metric("Predicted label for each digits", pred_dict[args.epochs]) # result from last epoch
 
 accuracy /= 100
 print(accuracy.max(0))
