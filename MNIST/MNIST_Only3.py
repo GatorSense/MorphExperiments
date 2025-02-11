@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -- coding: utf-8 --
 """
 Created on Wed Nov  8 14:57:53 2017
 
@@ -24,6 +24,7 @@ from torch.utils.data import DataLoader, Subset
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import pandas as pd
+from collections import defaultdict
 
 start_whole = time()
 # Training settings
@@ -177,7 +178,7 @@ def test():
     correct = 0
 
     # Store counts predicted as 3 for each digits
-    pred_dict = {"0": [0, 0], "1": [0, 0], "2": [0, 0], "3": [0, 0], "4": [0, 0], "5": [0, 0], "6": [0, 0], "7": [0, 0], "8": [0, 0], "9": [0, 0]}
+    pred_dict = defaultdict(lambda: [0, 0])
 
     for data, target in test_loader:
         if args.cuda:
@@ -204,12 +205,9 @@ def test():
         for i in range(len(original_target)):
             digit = str(original_target[i])
 
-            # predicted as 3
-            if pred_np[i] == 1:
-                pred_dict[digit][0] += 1
-            # not predicted as 3
-            else:
-                pred_dict[digit][1] += 1
+            # update counts for each digit
+            # note that first element (index 0) in pred_dict is for three, and second (index 1) is not three.
+            pred_dict[digit][pred_np[0 if pred_np[i] == 1 else 1]] += 1
 
     test_loss /= len(test_loader.dataset)
 
@@ -222,12 +220,13 @@ def test():
         y_predicted=output_total,
         labels=["Not Three", "Three"],
     )
-
-    pred_df = pd.DataFrame(columns=['Label', 'Three', 'Not Three'])
-    # pred_df["Label"] = pred_dict.keys()
     
-    for key in pred_dict.keys():
-        pred_df.loc[len(pred_df)] = [key, pred_dict[key][0], pred_dict[key][1]]
+    print(pred_dict)
+    pred_dict_sorted = dict(sorted(pred_dict.items()))
+    pred_df = pd.DataFrame(
+        [(key, val[0], val[1]) for key, val in pred_dict_sorted.items()],
+        columns=["Label", "Three", "Not Three"]
+    )
 
     stop_test = time()
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
@@ -240,8 +239,6 @@ experiment = start(
 )
 
 # Make list of empty dict to store predicted labels
-# keys = [str(n) for n in range(10)]
-# pred_dict = [{key: 0 for key in keys} for _ in range(args.epochs+1)]
 pred_df_list = []
 
 accuracy = torch.zeros(args.epochs+1)
