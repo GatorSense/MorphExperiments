@@ -23,6 +23,8 @@ from comet_ml.integration.pytorch import log_model
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
+import pandas as pd
+from collections import defaultdict
 
 start_whole = time()
 # Training settings
@@ -181,16 +183,7 @@ def test():
     correct = 0
 
     # Store counts predicted as 3 and 9 for each digits
-    pred_dict = {"0": [0, 0, 0], 
-                 "1": [0, 0, 0], 
-                 "2": [0, 0, 0], 
-                 "3": [0, 0, 0], 
-                 "4": [0, 0, 0], 
-                 "5": [0, 0, 0], 
-                 "6": [0, 0, 0], 
-                 "7": [0, 0, 0], 
-                 "8": [0, 0, 0], 
-                 "9": [0, 0, 0]}
+    pred_dict = defaultdict(lambda: [0, 0, 0])
     
     for data, target in test_loader:
         if args.cuda:
@@ -221,7 +214,7 @@ def test():
         pred_np = pred.cpu().detach().numpy().flatten()
         for i in range(len(original_target)):
             digit = str(original_target[i])
-            pred_dict[digit][pred_np[0]] += 1
+            pred_dict[digit][pred_np[i]] += 1
 
     test_loss /= len(test_loader.dataset)
 
@@ -235,9 +228,14 @@ def test():
         labels=["3", "9", "Other"],
     )
 
+    pred_df = pd.DataFrame(
+        [(key, val[0], val[1], val[2]) for key, val in pred_dict.items()],
+        columns=["Label", "Three", "Nine", "Neither"]
+    )
+
     stop_test = time()
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
-    return correct, pred_dict
+    return correct, pred_df
 
 experiment = start(
   api_key="ACmLuj8t9U7VuG1PAr1yksnM2",
@@ -245,18 +243,17 @@ experiment = start(
   workspace="joannekim"
 )
 
-# Make list of empty dict to store predicted labels
-keys = [str(n) for n in range(10)]
-pred_dict = [{key: 0 for key in keys} for _ in range(args.epochs+1)]
-
+# add empty dictionary at index 0 to match indexing for accuracy list
+pred_dict_list = [{}]
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
-    accuracy[epoch], pred_dict[epoch] = test()
+    accuracy[epoch], pred_dict = test()
+    pred_dict_list.append(pred_dict)
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
 
 # Log the last predicted label
-experiment.log_metric("Predicted label for each digits", pred_dict[args.epochs]) # result from last epoch
+experiment.log_table("pred_label_digit.csv", pred_dict_list[args.epochs]) # result from last epoch
 
 accuracy /= 100
 print(accuracy.max(0))

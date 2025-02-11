@@ -134,6 +134,7 @@ class Net(nn.Module):
         m_output = self.morph(x.cuda()).cuda()
         c_output = self.conv(x.cuda()).cuda()
         # output = c_output
+        # output = m_output
         output = torch.cat((m_output, c_output), dim=1)
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
@@ -206,8 +207,9 @@ def test():
             digit = str(original_target[i])
 
             # update counts for each digit
-            # note that first element (index 0) in pred_dict is for three, and second (index 1) is not three.
-            pred_dict[digit][pred_np[0 if pred_np[i] == 1 else 1]] += 1
+            pred_dict[digit][pred_np[i]] += 1
+        
+    # print(pred_dict)
 
     test_loss /= len(test_loader.dataset)
 
@@ -221,12 +223,14 @@ def test():
         labels=["Not Three", "Three"],
     )
     
-    print(pred_dict)
+    # sort dictionary by key
     pred_dict_sorted = dict(sorted(pred_dict.items()))
+    # print(pred_dict_sorted)
     pred_df = pd.DataFrame(
         [(key, val[0], val[1]) for key, val in pred_dict_sorted.items()],
-        columns=["Label", "Three", "Not Three"]
+        columns=["Label", "Not Three", "Three"]
     )
+    # print(pred_df)
 
     stop_test = time()
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
@@ -238,9 +242,8 @@ experiment = start(
   workspace="joannekim"
 )
 
-# Make list of empty dict to store predicted labels
-pred_df_list = []
-
+# add empty dictionary at index 0 to match indexing for accuracy list
+pred_df_list = [{}]
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
@@ -249,7 +252,7 @@ for epoch in range(1,args.epochs+1):
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
 
 # Log the last predicted label
-experiment.log_table("pred_label_digit.csv", pred_df_list[args.epochs-1]) # result from last epoch
+experiment.log_table("pred_label_digit.csv", pred_df_list[args.epochs]) # result from last epoch
 
 accuracy /= 100
 print(accuracy.max(0))
