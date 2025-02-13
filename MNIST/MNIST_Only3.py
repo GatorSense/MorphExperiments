@@ -6,6 +6,9 @@ Created on Wed Nov  8 14:57:53 2017
 @author: weihuangxu
 """
 
+import os
+from comet_ml import start
+from comet_ml.integration.pytorch import log_model
 import torch
 import argparse
 import numpy as np
@@ -18,13 +21,13 @@ from MNN_New2D import MNN
 #from MultiMNN import MulMNN
 from time import time
 import matplotlib.pyplot as plt
-from comet_ml import start
-from comet_ml.integration.pytorch import log_model
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import pandas as pd
 from collections import defaultdict
+import torchvision.utils as vutils
+import random
 
 start_whole = time()
 # Training settings
@@ -103,10 +106,28 @@ class MorphNet(nn.Module):
         super(MorphNet,self).__init__()
         self.MNN1 = MNN(1,10,5)
         self.MNN2 = MNN(10,5,5)
+        self.training = True
+        self.passes = 0
+        self.done = False
     
-    def forward(self,x):
-        output = F.max_pool2d(x,2)
+    def forward(self, x, epoch):
+        output = x
+        # output = F.max_pool2d(x,2)
         output = self.MNN1(output)
+        if not self.training and epoch == 100 and not self.done:
+            fm_dir = 'feature_maps/morph'
+            os.makedirs(fm_dir, exist_ok=True)
+            for batch in range(output.shape[0]):
+                plt.imshow(x[batch][0].cpu().detach().numpy(), cmap='gray')
+                plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Original.png'))
+                plt.clf()
+                for channel in range(output.shape[1]):
+                    plt.imshow(output[batch][channel].cpu().detach().numpy(), cmap='gray')
+                    plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Channel_{channel}.png'))
+                    plt.clf()
+                if batch == 100:
+                    self.done = True
+                    break
         output = self.MNN2(output)
         return output
     
@@ -115,10 +136,26 @@ class ConvNet(nn.Module):
         super(ConvNet,self).__init__()
         self.conv1 = nn.Conv2d(1, 20, kernel_size=5)
         self.conv2 = nn.Conv2d(20, 10, kernel_size=5)
+        self.training = True
+        self.done = False
     
-    def forward(self,x):
-        output = F.max_pool2d(x,2)
+    def forward(self, x, epoch):
+        output = x
         output = self.conv1(output)
+        if not self.training and epoch == 100 and not self.done:
+            fm_dir = 'feature_maps/conv'
+            os.makedirs(fm_dir, exist_ok=True)
+            for batch in range(output.shape[0]):
+                plt.imshow(x[batch][0].cpu().detach().numpy(), cmap='gray')
+                plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Original.png'))
+                plt.clf()
+                for channel in range(output.shape[1]):
+                    plt.imshow(output[batch][channel].cpu().detach().numpy(), cmap='gray')
+                    plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Channel_{channel}.png'))
+                    plt.clf()
+                if batch == 100:
+                    self.done = True
+                    break
         output = self.conv2(output)
         return output
 
@@ -127,18 +164,25 @@ class Net(nn.Module):
         super(Net,self).__init__()
         self.morph = MorphNet()
         self.conv = ConvNet()
-        self.fc1 = nn.Linear(2160,100)
-        self.fc2 = nn.Linear(100,2)
+        self.fc1 = nn.Linear(24000,10000)
+        self.fc2 = nn.Linear(10000,1000)
+        self.fc3 = nn.Linear(1000,100)
+        self.fc4 = nn.Linear(100,2)
+        self.training = True
     
-    def forward(self,x):
-        m_output = self.morph(x.cuda()).cuda()
-        c_output = self.conv(x.cuda()).cuda()
-        # output = c_output
-        # output = m_output
+    def forward(self, x, epoch):
+        self.morph.training = self.training
+        self.conv.training = self.training
+        m_output = self.morph(x.cuda(), epoch).cuda()
+        c_output = self.conv(x.cuda(), epoch).cuda()
         output = torch.cat((m_output, c_output), dim=1)
+        # output = m_output
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
+        # output = F.dropout(output, training=self.training)
         output = self.fc2(output)
+        output = self.fc3(output)
+        output = self.fc4(output)
         return F.log_softmax(output,1)
 
 model = Net()
@@ -150,6 +194,7 @@ dtype = torch.FloatTensor
 
 def train(epoch):
     model.train()
+    model.training = True
     start_train = time()
     for batch_idx, (data, target) in enumerate(train_loader):
 
@@ -158,7 +203,7 @@ def train(epoch):
             
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
-        output = model(data)
+        output = model(data, epoch)
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
@@ -170,13 +215,14 @@ def train(epoch):
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
 
-def test():
+def test(epoch):
     target_total = np.array([], dtype=int)
     output_total = np.array([], dtype=int)
     model.eval()
     start_test = time()
     test_loss = 0
     correct = 0
+    model.training = False
 
     # Store counts predicted as 3 for each digits
     pred_dict = defaultdict(lambda: [0, 0])
@@ -193,7 +239,7 @@ def test():
                              torch.tensor(1, device=target.device), 
                              torch.tensor(0, device=target.device))
         
-        output = model(data)
+        output = model(data, epoch)
         target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
         output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
         test_loss += F.nll_loss(output, target, size_average=False).item() # sum up batch loss
@@ -247,7 +293,7 @@ pred_df_list = [{}]
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
-    accuracy[epoch], pred_df = test()
+    accuracy[epoch], pred_df = test(epoch)
     pred_df_list.append(pred_df)
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
 

@@ -65,7 +65,7 @@ train_dataset = datasets.MNIST(
     ])
 )
 k_train_dataset = datasets.KMNIST(
-    oot='../data',
+    root='../data',
     train=True,
     download=True,
     transform=transforms.Compose([
@@ -82,20 +82,24 @@ train_subset_3 = Subset(train_dataset, idx_3)
 # black_images_train = torch.zeros(6000, 1, 28, 28)
 # black_images_train += 0.1 * torch.randn_like(black_images_train)
 
+from torchvision.transforms import ToTensor
+
 class KmnistAndThrees(Dataset):
     def __init__(self, kmnist_imgs, threes):
         self.kmnist = kmnist_imgs
         self.threes = threes
-    
+        self.to_tensor = ToTensor()
+
     def __len__(self):
         return len(self.kmnist) + len(self.threes)
-    
+
     def __getitem__(self, index):
         if index < len(self.threes):
             image, _ = self.threes[index]
-            return image, 1
+            return self.to_tensor(image), 1
         else:
-            return self.kmnist[index - len(self.threes)], 0
+            image, _ = self.kmnist[index - len(self.threes)]
+            return self.to_tensor(image), 0
         
 train_loader = DataLoader(KmnistAndThrees(k_train_dataset, train_subset_3), 
                           args.batch_size, shuffle=True, **kwargs)
@@ -116,6 +120,7 @@ class MorphNet(nn.Module):
     def forward(self,x):
         output = F.max_pool2d(x,2)
         output = self.MNN1(output)
+        print(output.shape)
         output = self.MNN2(output)
         return output
     
