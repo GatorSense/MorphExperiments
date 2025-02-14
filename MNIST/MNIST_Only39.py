@@ -228,11 +228,12 @@ def test():
         labels=["3", "9", "Other"],
     )
 
+    pred_dict_sorted = dict(sorted(pred_dict.items()))
     pred_df = pd.DataFrame(
-        [(key, val[0], val[1], val[2]) for key, val in pred_dict.items()],
+        [(key, val[0], val[1], val[2]) for key, val in pred_dict_sorted.items()],
         columns=["Label", "Three", "Nine", "Neither"]
     )
-
+    
     stop_test = time()
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
     return correct, pred_df

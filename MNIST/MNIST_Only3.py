@@ -164,7 +164,7 @@ class Net(nn.Module):
         super(Net,self).__init__()
         self.morph = MorphNet()
         self.conv = ConvNet()
-        self.fc1 = nn.Linear(24000,10000)
+        self.fc1 = nn.Linear(20000,10000)
         self.fc2 = nn.Linear(10000,1000)
         self.fc3 = nn.Linear(1000,100)
         self.fc4 = nn.Linear(100,2)
@@ -174,12 +174,12 @@ class Net(nn.Module):
         self.morph.training = self.training
         self.conv.training = self.training
         m_output = self.morph(x.cuda(), epoch).cuda()
-        c_output = self.conv(x.cuda(), epoch).cuda()
-        output = torch.cat((m_output, c_output), dim=1)
-        # output = m_output
+        # c_output = self.conv(x.cuda(), epoch).cuda()
+        # output = torch.cat((m_output, c_output), dim=1)
+        output = m_output
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
-        # output = F.dropout(output, training=self.training)
+        output = F.dropout(output, training=self.training)
         output = self.fc2(output)
         output = self.fc3(output)
         output = self.fc4(output)
