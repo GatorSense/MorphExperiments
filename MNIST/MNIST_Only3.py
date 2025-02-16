@@ -159,9 +159,9 @@ class ConvNet(nn.Module):
         output = self.conv2(output)
         return output
 
-class MNN(nn.Module):
+class MNNModel(nn.Module):
     def __init__(self):
-        super(MNN,self).__init__()
+        super(MNNModel,self).__init__()
         self.morph = MorphNet()
         self.fc1 = nn.Linear(20000,10000)
         self.fc2 = nn.Linear(10000,1000)
@@ -181,9 +181,9 @@ class MNN(nn.Module):
         output = self.fc4(output)
         return F.log_softmax(output,1)
 
-class CNN(nn.Module):
+class CNNModel(nn.Module):
     def __init__(self):
-        super(CNN,self).__init__()
+        super(CNNModel,self).__init__()
         self.conv = ConvNet()
         self.fc1 = nn.Linear(4000,2000)
         self.fc2 = nn.Linear(2000,200)
@@ -203,9 +203,9 @@ class CNN(nn.Module):
         output = self.fc4(output)
         return F.log_softmax(output,1)
     
-class MCNN(nn.Module):
+class MCNNModel(nn.Module):
     def __init__(self):
-        super(MCNN,self).__init__()
+        super(MCNNModel,self).__init__()
         self.morph = MorphNet()
         self.conv = ConvNet()
         self.fc1 = nn.Linear(24000,10000)
@@ -223,12 +223,11 @@ class MCNN(nn.Module):
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
         output = self.fc2(output)
-        output = F.dropout(output, p=0.5, training=self.training)
         output = self.fc3(output)
         output = self.fc4(output)
         return F.log_softmax(output,1)
 
-model = CNN()
+model = MCNNModel()
 if args.cuda:
     model.cuda()
 
