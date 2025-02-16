@@ -159,12 +159,56 @@ class ConvNet(nn.Module):
         output = self.conv2(output)
         return output
 
-class Net(nn.Module):
+class MNN(nn.Module):
     def __init__(self):
-        super(Net,self).__init__()
+        super(MNN,self).__init__()
+        self.morph = MorphNet()
+        self.fc1 = nn.Linear(20000,10000)
+        self.fc2 = nn.Linear(10000,1000)
+        self.fc3 = nn.Linear(1000,100)
+        self.fc4 = nn.Linear(100,2)
+        self.training = True
+    
+    def forward(self, x, epoch):
+        self.morph.training = self.training
+        m_output = self.morph(x.cuda(), epoch).cuda()
+        output = m_output 
+        output = output.view(output.size(0), -1)
+        output = F.relu(self.fc1(output))
+        output = self.fc2(output)
+        output = F.dropout(output, p=0.5, training=self.training)
+        output = self.fc3(output)
+        output = self.fc4(output)
+        return F.log_softmax(output,1)
+
+class CNN(nn.Module):
+    def __init__(self):
+        super(CNN,self).__init__()
+        self.conv = ConvNet()
+        self.fc1 = nn.Linear(4000,2000)
+        self.fc2 = nn.Linear(2000,200)
+        self.fc3 = nn.Linear(200,100)
+        self.fc4 = nn.Linear(100,2)
+        self.training = True
+    
+    def forward(self, x, epoch):
+        self.conv.training = self.training
+        c_output = self.conv(x.cuda(), epoch).cuda()
+        output = c_output
+        output = output.view(output.size(0), -1)
+        output = F.relu(self.fc1(output))
+        output = self.fc2(output)
+        output = F.dropout(output, p=0.5, training=self.training)
+        output = self.fc3(output)
+        output = self.fc4(output)
+        return F.log_softmax(output,1)
+    
+class MCNN(nn.Module):
+    def __init__(self):
+        super(MCNN,self).__init__()
         self.morph = MorphNet()
         self.conv = ConvNet()
-        self.fc1 = nn.Linear(20000,10000)
+        self.fc1 = nn.Linear(24000,10000)
         self.fc2 = nn.Linear(10000,1000)
         self.fc3 = nn.Linear(1000,100)
         self.fc4 = nn.Linear(100,2)
@@ -174,18 +218,17 @@ class Net(nn.Module):
         self.morph.training = self.training
         self.conv.training = self.training
         m_output = self.morph(x.cuda(), epoch).cuda()
-        # c_output = self.conv(x.cuda(), epoch).cuda()
-        # output = torch.cat((m_output, c_output), dim=1)
-        output = m_output
+        c_output = self.conv(x.cuda(), epoch).cuda()
+        output = torch.cat((m_output, c_output), dim=1)
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
-        output = F.dropout(output, training=self.training)
         output = self.fc2(output)
+        output = F.dropout(output, p=0.5, training=self.training)
         output = self.fc3(output)
         output = self.fc4(output)
         return F.log_softmax(output,1)
 
-model = Net()
+model = CNN()
 if args.cuda:
     model.cuda()
 
