@@ -28,6 +28,7 @@ import pandas as pd
 from collections import defaultdict
 import torchvision.utils as vutils
 import random
+from helper_functions.plot import plot_heatmap
 
 start_whole = time()
 # Training settings
@@ -268,6 +269,7 @@ def test(epoch):
 
     # Store counts predicted as 3 for each digits
     pred_dict = defaultdict(lambda: [0, 0])
+    heatmap_data = np.zeros((10, 2))
 
     for data, target in test_loader:
         if args.cuda:
@@ -292,10 +294,12 @@ def test(epoch):
         # store predicted labels in the dict
         pred_np = pred.cpu().detach().numpy().flatten()
         for i in range(len(original_target)):
-            digit = str(original_target[i])
+            digit = original_target[i]
+            digit_str = str(digit)
 
             # update counts for each digit
-            pred_dict[digit][pred_np[i]] += 1
+            pred_dict[digit_str][pred_np[i]] += 1
+            heatmap_data[digit][pred_np[i]] += 1
         
     # print(pred_dict)
 
@@ -310,15 +314,17 @@ def test(epoch):
         y_predicted=output_total,
         labels=["Not Three", "Three"],
     )
+
+    print(heatmap_data)
+    heatmap = plot_heatmap(heatmap_data)
+    experiment.log_figure(figure_name="heatmap", figure=heatmap, step=epoch)
     
     # sort dictionary by key
     pred_dict_sorted = dict(sorted(pred_dict.items()))
-    # print(pred_dict_sorted)
     pred_df = pd.DataFrame(
         [(key, val[0], val[1]) for key, val in pred_dict_sorted.items()],
         columns=["Label", "Not Three", "Three"]
     )
-    # print(pred_df)
 
     stop_test = time()
     print('==== Test Cycle Time ====\n', str(stop_test - start_test))
@@ -340,7 +346,7 @@ for epoch in range(1,args.epochs+1):
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
 
 # Log the last predicted label
-experiment.log_table("pred_label_digit.csv", pred_df_list[args.epochs]) # result from last epoch
+experiment.log_table("Predicted_Digit_Labels_Last_Epoch.csv", pred_df_list[args.epochs]) # result from last epoch
 
 accuracy /= 100
 print(accuracy.max(0))
