@@ -1,4 +1,3 @@
-import numpy as np
 import matplotlib.pyplot as plt
 
 def plot_heatmap(data):
@@ -9,7 +8,7 @@ def plot_heatmap(data):
     plt.xlabel("True label")
     plt.ylabel("Predicted Label")
     plt.xticks(ticks=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    plt.yticks(ticks=[0, 1], labels=["Three", "Not Three"])
+    plt.yticks(ticks=[0, 1], labels=["Not Three", "Three"])
     plt.title('Heatmap')
 
     for i in range(data.T.shape[0]):

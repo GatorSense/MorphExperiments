@@ -75,6 +75,7 @@ class MorphNet(nn.Module):
         output = F.max_pool2d(x,2)
         output = self.MNN1(output)
         output = self.MNN2(output)
+        
         return output
     
 class ConvNet(nn.Module):

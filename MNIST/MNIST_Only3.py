@@ -29,6 +29,7 @@ from collections import defaultdict
 import torchvision.utils as vutils
 import random
 from helper_functions.plot import plot_heatmap
+from pprint import pprint
 
 start_whole = time()
 # Training settings
@@ -49,13 +50,48 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
+parser.add_argument('--model-type', type=str, default='morph', metavar='N',
+                    help='type of layer to use (default: morph, could use conv or MCNN)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
+args_dict = vars(args)
+pprint(args_dict)
 
 # torch.manual_seed(args.seed)
 # #torch.initial_seed()
 # if args.cuda:
 #     torch.cuda.manual_seed(args.seed)
+
+import os
+import torch
+import matplotlib.pyplot as plt
+
+def visualize_filters(layer, dir='filters/', title="Filters"):
+    # Extract filter weights
+    K_hit = layer.K_hit.data.cpu().numpy()  # Convert to NumPy
+    K_miss = layer.K_miss.data.cpu().numpy()
+    
+    out_channels, in_channels, kernel_size, _ = K_hit.shape
+
+    # Ensure the directory exists
+    os.makedirs(dir, exist_ok=True)
+
+    # Iterate over filters
+    for i in range(out_channels):
+        for j in range(in_channels):
+            # Save K_hit
+            plt.imshow(K_hit[i, j], cmap='gray', interpolation='nearest')
+            plt.title(f"K_hit [{i},{j}]")
+            plt.axis('off')
+            plt.savefig(os.path.join(dir, f"filter_{i}_hit.png"))
+            plt.clf()
+
+            # Save K_miss
+            plt.imshow(K_miss[i, j], cmap='gray', interpolation='nearest')
+            plt.title(f"K_miss [{i},{j}]")
+            plt.axis('off')
+            plt.savefig(os.path.join(dir, f"filter_{i}_miss.png"))
+            plt.clf()
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
@@ -105,8 +141,8 @@ test_loader = torch.utils.data.DataLoader(
 class MorphNet(nn.Module):
     def __init__(self):
         super(MorphNet,self).__init__()
-        self.MNN1 = MNN(1,10,5)
-        self.MNN2 = MNN(10,5,5)
+        self.MNN1 = MNN(1,10,14)
+        self.MNN2 = MNN(10,5,14)
         self.training = True
         self.passes = 0
         self.done = False
@@ -116,8 +152,10 @@ class MorphNet(nn.Module):
         # output = F.max_pool2d(x,2)
         output = self.MNN1(output)
         if not self.training and epoch == 100 and not self.done:
+            visualize_filters(self.MNN1)
             fm_dir = 'feature_maps/morph'
             os.makedirs(fm_dir, exist_ok=True)
+            os.makedirs('filters', exist_ok=True)
             for batch in range(output.shape[0]):
                 plt.imshow(x[batch][0].cpu().detach().numpy(), cmap='gray')
                 plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Original.png'))
@@ -164,10 +202,10 @@ class MNNModel(nn.Module):
     def __init__(self):
         super(MNNModel,self).__init__()
         self.morph = MorphNet()
-        self.fc1 = nn.Linear(20000,10000)
-        self.fc2 = nn.Linear(10000,1000)
-        self.fc3 = nn.Linear(1000,100)
-        self.fc4 = nn.Linear(100,2)
+        self.fc1 = nn.Linear(200,100)
+        self.fc2 = nn.Linear(100,2)
+        # self.fc3 = nn.Linear(1000,100)
+        # self.fc4 = nn.Linear(100,2)
         self.training = True
     
     def forward(self, x, epoch):
@@ -177,9 +215,9 @@ class MNNModel(nn.Module):
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
         output = self.fc2(output)
-        output = F.dropout(output, p=0.5, training=self.training)
-        output = self.fc3(output)
-        output = self.fc4(output)
+        # output = F.dropout(output, p=0.5, training=self.training)
+        # output = self.fc3(output)
+        # output = self.fc4(output)
         return F.log_softmax(output,1)
 
 class CNNModel(nn.Module):
@@ -228,7 +266,13 @@ class MCNNModel(nn.Module):
         output = self.fc4(output)
         return F.log_softmax(output,1)
 
-model = MCNNModel()
+if args.model_type == 'morph':
+    model = MNNModel()
+elif args.model_type == 'conv':
+    model = CNNModel()
+else:
+    model = MCNNModel()
+
 if args.cuda:
     model.cuda()
 
@@ -247,7 +291,7 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
         output = model(data, epoch)
-        loss = F.nll_loss(output, target)
+        loss = F.nll_loss(output.cuda(), target)
         loss.backward()
         optimizer.step()
 
@@ -270,64 +314,65 @@ def test(epoch):
     # Store counts predicted as 3 for each digits
     pred_dict = defaultdict(lambda: [0, 0])
     heatmap_data = np.zeros((10, 2))
+    model.eval()
+    with torch.no_grad():
+        for data, target in test_loader:
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data), Variable(target)
 
-    for data, target in test_loader:
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
+            # Get original target to determine actual number
+            original_target = target.cpu().detach().numpy()
 
-        # Get original target to determine actual number
-        original_target = target.cpu().detach().numpy()
+            target = torch.where(target == 3, 
+                                torch.tensor(1, device=target.device), 
+                                torch.tensor(0, device=target.device))
+            
+            output = model(data, epoch)
+            target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
+            output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
+            test_loss += F.nll_loss(output, target, size_average=False).item() # sum up batch loss
+            pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+            #print(pred)
+            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-        target = torch.where(target == 3, 
-                             torch.tensor(1, device=target.device), 
-                             torch.tensor(0, device=target.device))
+            # store predicted labels in the dict
+            pred_np = pred.cpu().detach().numpy().flatten()
+            for i in range(len(original_target)):
+                digit = original_target[i]
+                digit_str = str(digit)
+
+                # update counts for each digit
+                pred_dict[digit_str][pred_np[i]] += 1
+                heatmap_data[digit][pred_np[i]] += 1
+            
+        # print(pred_dict)
+
+        test_loss /= len(test_loader.dataset)
+
+        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            test_loss, correct, len(test_loader.dataset),
+            100. * correct / len(test_loader.dataset)))
         
-        output = model(data, epoch)
-        target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
-        output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
-        test_loss += F.nll_loss(output, target, size_average=False).item() # sum up batch loss
-        pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
-        #print(pred)
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        experiment.log_confusion_matrix(
+            y_true=target_total,
+            y_predicted=output_total,
+            labels=["Not Three", "Three"],
+        )
 
-        # store predicted labels in the dict
-        pred_np = pred.cpu().detach().numpy().flatten()
-        for i in range(len(original_target)):
-            digit = original_target[i]
-            digit_str = str(digit)
-
-            # update counts for each digit
-            pred_dict[digit_str][pred_np[i]] += 1
-            heatmap_data[digit][pred_np[i]] += 1
+        print(heatmap_data)
+        heatmap = plot_heatmap(heatmap_data)
+        experiment.log_figure(figure_name="heatmap", figure=heatmap, step=epoch)
         
-    # print(pred_dict)
+        # sort dictionary by key
+        pred_dict_sorted = dict(sorted(pred_dict.items()))
+        pred_df = pd.DataFrame(
+            [(key, val[0], val[1]) for key, val in pred_dict_sorted.items()],
+            columns=["Label", "Not Three", "Three"]
+        )
 
-    test_loss /= len(test_loader.dataset)
-
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-    
-    experiment.log_confusion_matrix(
-        y_true=target_total,
-        y_predicted=output_total,
-        labels=["Not Three", "Three"],
-    )
-
-    print(heatmap_data)
-    heatmap = plot_heatmap(heatmap_data)
-    experiment.log_figure(figure_name="heatmap", figure=heatmap, step=epoch)
-    
-    # sort dictionary by key
-    pred_dict_sorted = dict(sorted(pred_dict.items()))
-    pred_df = pd.DataFrame(
-        [(key, val[0], val[1]) for key, val in pred_dict_sorted.items()],
-        columns=["Label", "Not Three", "Three"]
-    )
-
-    stop_test = time()
-    print('==== Test Cycle Time ====\n', str(stop_test - start_test))
+        stop_test = time()
+        print('==== Test Cycle Time ====\n', str(stop_test - start_test))
     return correct, pred_df
 
 experiment = start(
