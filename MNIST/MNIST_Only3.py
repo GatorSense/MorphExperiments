@@ -28,7 +28,7 @@ import pandas as pd
 from collections import defaultdict
 import torchvision.utils as vutils
 import random
-from helper_functions.plot import plot_heatmap
+from helper_functions.plot import plot_heatmap, plot_hit_filters, plot_miss_filters
 from pprint import pprint
 
 start_whole = time()
@@ -139,10 +139,13 @@ test_loader = torch.utils.data.DataLoader(
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
 class MorphNet(nn.Module):
-    def __init__(self):
+    def __init__(self, selected_3=None):
         super(MorphNet,self).__init__()
-        self.MNN1 = MNN(1,10,14)
-        self.MNN2 = MNN(10,5,14)
+        if (selected_3):
+            self.MNN1 = MNN(1,10,28, selected_3)
+        else:
+            self.MNN1 = MNN(1,10,28)
+        self.MNN2 = MNN(10,5,5)
         self.training = True
         self.passes = 0
         self.done = False
@@ -199,9 +202,12 @@ class ConvNet(nn.Module):
         return output
 
 class MNNModel(nn.Module):
-    def __init__(self):
+    def __init__(self, selected_3=None):
         super(MNNModel,self).__init__()
-        self.morph = MorphNet()
+        if (selected_3):
+            self.morph = MorphNet(selected_3)
+        else:
+            self.morph = MorphNet()
         self.fc1 = nn.Linear(200,100)
         self.fc2 = nn.Linear(100,2)
         # self.fc3 = nn.Linear(1000,100)
@@ -266,8 +272,27 @@ class MCNNModel(nn.Module):
         output = self.fc4(output)
         return F.log_softmax(output,1)
 
+experiment = start(
+  api_key="ACmLuj8t9U7VuG1PAr1yksnM2",
+  project_name="morphological",
+  workspace="joannekim"
+)
+
+rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
+# print(rand_index)
+selected_3 = Subset(train_subset_3, rand_index)
+
+dir = "filters/initialize/"
+hit_fig, hit_plt = plot_hit_filters(selected_3)
+hit_plt.savefig(os.path.join(dir, "initial_filters_hit.png"))
+experiment.log_figure(figure_name="filters_hit", figure=hit_fig)
+
+miss_fig, miss_plt = plot_miss_filters(selected_3)
+miss_plt.savefig(os.path.join(dir, "initial_filters_miss.png"))
+experiment.log_figure(figure_name="filters_miss", figure=miss_fig)
+
 if args.model_type == 'morph':
-    model = MNNModel()
+    model = MNNModel(selected_3)
 elif args.model_type == 'conv':
     model = CNNModel()
 else:
@@ -374,12 +399,6 @@ def test(epoch):
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))
     return correct, pred_df
-
-experiment = start(
-  api_key="ACmLuj8t9U7VuG1PAr1yksnM2",
-  project_name="morphological",
-  workspace="joannekim"
-)
 
 # add empty dictionary at index 0 to match indexing for accuracy list
 pred_df_list = [{}]

@@ -42,7 +42,7 @@ class _Hitmiss(Function):
 
 class MNN(nn.Module):
 
-    def __init__(self, in_channels, out_channels, kernel_size):
+    def __init__(self, in_channels, out_channels, kernel_size, selected_3=None):
 
         super(MNN, self).__init__()
         self.in_channels = in_channels
@@ -50,13 +50,37 @@ class MNN(nn.Module):
         self.kernel_size = kernel_size
         self.K_hit = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
         self.K_miss = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
-        self.reset_parameters()
+        
+        if (selected_3):
+            self.set_hitmiss_filters_to_3(selected_3)
+        else:
+            self.reset_parameters()
 
+    # Initializes hit and miss filters
     def reset_parameters(self):
         n = self.in_channels * math.pow(self.kernel_size,2)
         stdv = 1. / math.sqrt(n)
         self.K_hit.data.uniform_(-stdv, stdv)
         self.K_miss.data.uniform_(-stdv, stdv)
+
+    def set_hit_filters(self, selected_3):
+        print(self.K_hit.shape)
+        new_K_hit = self.K_hit.clone()
+        for i in range(10):
+            image = selected_3[i][0][0]
+            new_K_hit[i][0] = image
+        self.K_hit.data = new_K_hit
+    
+    def set_miss_filters(self, selected_3):
+        new_K_miss = self.K_miss.clone()
+        for i in range(10):
+            image = selected_3[i][0][0]
+            new_K_miss[i][0] = 1 - image
+        self.K_miss.data = new_K_miss
+
+    def set_hitmiss_filters_to_3(self, selected_3):
+        self.set_hit_filters(selected_3)
+        self.set_miss_filters(selected_3)
 
 
     def forward(self, input):
