@@ -69,14 +69,14 @@ class MNN(nn.Module):
         for i in range(10):
             image = selected_3[i][0][0]
             new_K_hit[i][0] = image
-        self.K_hit.data = new_K_hit
+        self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
     
     def set_miss_filters(self, selected_3):
         new_K_miss = self.K_miss.clone()
         for i in range(10):
             image = selected_3[i][0][0]
             new_K_miss[i][0] = 1 - image
-        self.K_miss.data = new_K_miss
+        self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
 
     def set_hitmiss_filters_to_3(self, selected_3):
         self.set_hit_filters(selected_3)
@@ -85,6 +85,5 @@ class MNN(nn.Module):
 
     def forward(self, input):
         #import pdb; pdb.set_trace()
-        
         return _Hitmiss().forward(input, self.K_hit, self.K_miss, self.kernel_size, self.out_channels)
 

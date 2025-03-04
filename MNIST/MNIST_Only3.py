@@ -8,7 +8,6 @@ Created on Wed Nov  8 14:57:53 2017
 
 import os
 from comet_ml import start
-from comet_ml.integration.pytorch import log_model
 import torch
 import argparse
 import numpy as np
@@ -18,17 +17,14 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 from MNN_New2D import MNN
-#from MultiMNN import MulMNN
 from time import time
-import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import pandas as pd
 from collections import defaultdict
-import torchvision.utils as vutils
-import random
 from helper_functions.plot import plot_heatmap, plot_hit_filters, plot_miss_filters
+from helper_functions.logger import log_weights
 from pprint import pprint
 
 start_whole = time()
@@ -145,7 +141,7 @@ class MorphNet(nn.Module):
             self.MNN1 = MNN(1,10,28, selected_3)
         else:
             self.MNN1 = MNN(1,10,28)
-        self.MNN2 = MNN(10,5,5)
+        # self.MNN2 = MNN(10,5,5)
         self.training = True
         self.passes = 0
         self.done = False
@@ -170,7 +166,7 @@ class MorphNet(nn.Module):
                 if batch == 100:
                     self.done = True
                     break
-        output = self.MNN2(output)
+        # output = self.MNN2(output)
         return output
     
 class ConvNet(nn.Module):
@@ -184,7 +180,7 @@ class ConvNet(nn.Module):
     def forward(self, x, epoch):
         output = x
         output = self.conv1(output)
-        if not self.training and epoch == 100 and not self.done:
+        if not self.training and epoch == 5 and not self.done:
             fm_dir = 'feature_maps/conv'
             os.makedirs(fm_dir, exist_ok=True)
             for batch in range(output.shape[0]):
@@ -208,8 +204,7 @@ class MNNModel(nn.Module):
             self.morph = MorphNet(selected_3)
         else:
             self.morph = MorphNet()
-        self.fc1 = nn.Linear(200,100)
-        self.fc2 = nn.Linear(100,2)
+        self.fc1 = nn.Linear(10,2)
         # self.fc3 = nn.Linear(1000,100)
         # self.fc4 = nn.Linear(100,2)
         self.training = True
@@ -220,7 +215,7 @@ class MNNModel(nn.Module):
         output = m_output 
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
-        output = self.fc2(output)
+        # output = self.fc2(output)
         # output = F.dropout(output, p=0.5, training=self.training)
         # output = self.fc3(output)
         # output = self.fc4(output)
@@ -283,6 +278,7 @@ rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
 selected_3 = Subset(train_subset_3, rand_index)
 
 dir = "filters/initialize/"
+os.makedirs(dir, exist_ok=True)
 hit_fig, hit_plt = plot_hit_filters(selected_3)
 hit_plt.savefig(os.path.join(dir, "initial_filters_hit.png"))
 experiment.log_figure(figure_name="filters_hit", figure=hit_fig)
@@ -408,6 +404,8 @@ for epoch in range(1,args.epochs+1):
     accuracy[epoch], pred_df = test(epoch)
     pred_df_list.append(pred_df)
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
+    weights = log_weights(model)
+    experiment.log_metrics(weights)
 
 # Log the last predicted label
 experiment.log_table("Predicted_Digit_Labels_Last_Epoch.csv", pred_df_list[args.epochs]) # result from last epoch
