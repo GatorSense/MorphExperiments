@@ -19,7 +19,7 @@ from MNN_New2D import MNN
 from time import time
 import matplotlib.pyplot as plt
 from comet_ml import start
-from comet_ml.integration.pytorch import log_model
+from helper_functions.logger import log_weights
 
 start_whole = time()
 # Training settings
@@ -94,8 +94,8 @@ class Net(nn.Module):
     def __init__(self):
         super(Net,self).__init__()
         self.morph = MorphNet()
-        self.conv = ConvNet()
-        self.fc1 = nn.Linear(2160,100)
+        # self.conv = ConvNet()
+        self.fc1 = nn.Linear(1860,100)
         self.fc2 = nn.Linear(100,10)
     
     def forward(self,x):
@@ -173,6 +173,7 @@ for epoch in range(1,args.epochs+1):
     train(epoch)
     accuracy[epoch] = test()
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
+    experiment.log_metrics(log_weights(model))
 
 accuracy /= 100
 print(accuracy.max(0))

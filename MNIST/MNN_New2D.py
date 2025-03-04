@@ -64,12 +64,13 @@ class MNN(nn.Module):
         self.K_miss.data.uniform_(-stdv, stdv)
 
     def set_hit_filters(self, selected_3):
-        print(self.K_hit.shape)
-        new_K_hit = self.K_hit.clone()
-        for i in range(10):
-            image = selected_3[i][0][0]
-            new_K_hit[i][0] = image
-        self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
+        with torch.no_grad:
+            print(self.K_hit.shape)
+            new_K_hit = self.K_hit.clone()
+            for i in range(10):
+                image = selected_3[i][0][0]
+                new_K_hit[i][0] = image
+            self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
     
     def set_miss_filters(self, selected_3):
         new_K_miss = self.K_miss.clone()

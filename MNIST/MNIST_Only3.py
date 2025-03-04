@@ -26,6 +26,7 @@ from collections import defaultdict
 from helper_functions.plot import plot_heatmap, plot_hit_filters, plot_miss_filters
 from helper_functions.logger import log_weights
 from pprint import pprint
+from torch.nn import Parameter
 
 start_whole = time()
 # Training settings
@@ -170,10 +171,24 @@ class MorphNet(nn.Module):
         return output
     
 class ConvNet(nn.Module):
-    def __init__(self):
+    def set_conv_filters(self, selected_3):
+        if selected_3 is None:
+            return
+        
+        # Ensure selected_3 is a tensor with the right shape
+        selected_3 = torch.tensor(selected_3)  # Convert to tensor if needed
+        if selected_3.shape[1:] != self.conv1.weight.shape[1:]:
+            raise ValueError(f"Shape mismatch: expected {self.conv1.weight.shape[1:]}, got {selected_3.shape[1:]}")
+
+        # Assign selected filters to conv layer
+        with torch.no_grad():  # Ensure this operation does not track gradients
+            self.conv1.weight.data[:selected_3.shape[0]] = selected_3
+
+    def __init__(self, selected_3=None):
         super(ConvNet,self).__init__()
-        self.conv1 = nn.Conv2d(1, 20, kernel_size=5)
-        self.conv2 = nn.Conv2d(20, 10, kernel_size=5)
+        self.conv1 = nn.Conv2d(1, 20, kernel_size=28)
+        self.set_conv_filters(selected_3)
+        # self.conv2 = nn.Conv2d(20, 10, kernel_size=5)
         self.training = True
         self.done = False
     
@@ -222,13 +237,13 @@ class MNNModel(nn.Module):
         return F.log_softmax(output,1)
 
 class CNNModel(nn.Module):
-    def __init__(self):
+    def __init__(self, selected_3=None):
         super(CNNModel,self).__init__()
-        self.conv = ConvNet()
-        self.fc1 = nn.Linear(4000,2000)
-        self.fc2 = nn.Linear(2000,200)
-        self.fc3 = nn.Linear(200,100)
-        self.fc4 = nn.Linear(100,2)
+        self.conv = ConvNet(selected_3)
+        self.fc1 = nn.Linear(20,2)
+        # self.fc2 = nn.Linear(2000,200)
+        # self.fc3 = nn.Linear(200,100)
+        # self.fc4 = nn.Linear(100,2)
         self.training = True
     
     def forward(self, x, epoch):
@@ -237,10 +252,10 @@ class CNNModel(nn.Module):
         output = c_output
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
-        output = self.fc2(output)
-        output = F.dropout(output, p=0.5, training=self.training)
-        output = self.fc3(output)
-        output = self.fc4(output)
+        # output = self.fc2(output)
+        # output = F.dropout(output, p=0.5, training=self.training)
+        # output = self.fc3(output)
+        # output = self.fc4(output)
         return F.log_softmax(output,1)
     
 class MCNNModel(nn.Module):
@@ -290,7 +305,9 @@ experiment.log_figure(figure_name="filters_miss", figure=miss_fig)
 if args.model_type == 'morph':
     model = MNNModel(selected_3)
 elif args.model_type == 'conv':
-    model = CNNModel()
+    rand_index = (np.random.rand(20) * len(train_subset_3)).astype(int)
+    selected_3 = Subset(train_subset_3, rand_index)
+    model = CNNModel(selected_3)
 else:
     model = MCNNModel()
 
