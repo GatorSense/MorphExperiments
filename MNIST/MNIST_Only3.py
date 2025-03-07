@@ -135,6 +135,8 @@ test_loader = torch.utils.data.DataLoader(
                    ])),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
+feature_map_list = []
+
 class MorphNet(nn.Module):
     def __init__(self, selected_3=None):
         super(MorphNet,self).__init__()
@@ -148,9 +150,20 @@ class MorphNet(nn.Module):
         self.done = False
     
     def forward(self, x, epoch):
+        print("hello")
         output = x
         # output = F.max_pool2d(x,2)
         output = self.MNN1(output)
+
+        print(f"self.training:{self.training}, epoch: {epoch}")
+        # Plot feature map
+        if self.training and epoch == 1:
+            feature_map = output.clone().detach()
+            feature_map_list.append(feature_map)
+            experiment.log_metric("feature map", feature_map_list, epoch)
+            print(feature_map_list)
+
+        # Plot filters
         if not self.training and not self.done and epoch==100:
             os.makedirs('filters/', exist_ok=True)
             hit_filters_fig, hit_filters_plot = plot_filters(self.MNN1.K_hit)
@@ -163,7 +176,7 @@ class MorphNet(nn.Module):
 
             fm_dir = 'feature_maps/morph'
             os.makedirs(fm_dir, exist_ok=True)
-            os.makedirs('filters', exist_ok=True)
+            os.makedirs('filters', exist_ok=True)  
         return output
     
 class ConvNet(nn.Module):
@@ -239,7 +252,8 @@ class MNNModel(nn.Module):
     def forward(self, x, epoch):
         self.morph.training = self.training
         m_output = self.morph(x.cuda(), epoch).cuda()
-        output = m_output 
+        output = m_output
+        print(f"MNNModel output shape: {output.shape}")
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
         # output = self.fc2(output)
@@ -410,7 +424,7 @@ def test(epoch):
             labels=["Not Three", "Three"],
         )
 
-        print(heatmap_data)
+        # print(heatmap_data)
         heatmap = plot_heatmap(heatmap_data)
         experiment.log_figure(figure_name="heatmap", figure=heatmap, step=epoch)
         
