@@ -18,6 +18,7 @@ def plot_heatmap(data):
     return heatmap.figure
 
 def plot_hit_filters(selected_3):
+    plt.clf()
     fig, axes = plt.subplots(2, 5, figsize=(8,4))
 
     for i in range(10):
@@ -41,6 +42,7 @@ def plot_hit_filters(selected_3):
     # experiment.log_figure(figure_name="filters_hit", figure=fig)
 
 def plot_miss_filters(selected_3):
+    plt.clf()
     fig, axes = plt.subplots(2, 5, figsize=(8,4))
 
     for i in range(10):
@@ -61,3 +63,58 @@ def plot_miss_filters(selected_3):
     return fig, plt
     # plt.savefig("filters/initialize/initial_filters_miss.png")
     # experiment.log_figure(figure_name="filters_miss", figure=fig)
+
+def plot_filters(filter_layer):
+    plt.clf()
+    filter = filter_layer.data.cpu().numpy()
+    
+    out_channels, in_channels, kernel_size, _ = filter.shape
+
+    fig, axes = plt.subplots(2, 5, figsize=(16,8))
+
+    for i in range(out_channels):
+        for j in range(in_channels):
+            if (i < 5):
+                ax_hit = axes[0][i]
+            else:
+                ax_hit = axes[1][i-5]
+            
+            ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
+            ax_hit.set_title(f"filter [{i},{j}]")
+            ax_hit.set_xticks([])
+            ax_hit.set_yticks([])
+        
+        fig.suptitle("Filters")
+        fig.tight_layout()
+
+    return fig, plt
+
+import math
+def plot_conv_filters(filter_layer):
+    plt.clf()
+    filter = filter_layer.weight.data.cpu().numpy()
+
+    out_channels, in_channels, kernel_size, _ = filter.shape
+
+    # Calculate the grid size based on the number of filters (out_channels)
+    cols = 5  # Fixed number of columns (you can adjust this)
+    rows = math.ceil(out_channels / cols)  # Calculate the number of rows
+
+    fig, axes = plt.subplots(rows, cols, figsize=(16, 8))
+
+    for i in range(out_channels):
+        for j in range(in_channels):
+            row = i // cols
+            col = i % cols
+            
+            ax_hit = axes[row][col] if rows > 1 else axes[col]  # Adjust for single row
+
+            ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
+            ax_hit.set_title(f"filter [{i},{j}]")
+            ax_hit.set_xticks([])
+            ax_hit.set_yticks([])
+
+    fig.suptitle("Filters")
+    fig.tight_layout()
+
+    return fig, plt

@@ -23,7 +23,7 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import pandas as pd
 from collections import defaultdict
-from helper_functions.plot import plot_heatmap, plot_hit_filters, plot_miss_filters
+from helper_functions.plot import *
 from helper_functions.logger import log_weights
 from pprint import pprint
 from torch.nn import Parameter
@@ -47,7 +47,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
-parser.add_argument('--model-type', type=str, default='morph', metavar='N',
+parser.add_argument('--model-type', type=str, default='conv', metavar='N',
                     help='type of layer to use (default: morph, could use conv or MCNN)')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -151,38 +151,41 @@ class MorphNet(nn.Module):
         output = x
         # output = F.max_pool2d(x,2)
         output = self.MNN1(output)
-        if not self.training and epoch == 100 and not self.done:
-            visualize_filters(self.MNN1)
+        if not self.training and not self.done and epoch==100:
+            os.makedirs('filters/', exist_ok=True)
+            hit_filters_fig, hit_filters_plot = plot_filters(self.MNN1.K_hit)
+            hit_filters_plot.savefig(os.path.join('filters', f"hit_filter_epoch{epoch}.png"))
+            experiment.log_figure(figure_name="filters_hit", figure=hit_filters_fig, step=epoch)
+
+            miss_filters_fig, miss_filters_plot = plot_filters(self.MNN1.K_miss)
+            miss_filters_plot.savefig(os.path.join('filters', f"miss_filter_epoch{epoch}.png"))
+            experiment.log_figure(figure_name="filters_miss", figure=miss_filters_fig, step=epoch)
+
             fm_dir = 'feature_maps/morph'
             os.makedirs(fm_dir, exist_ok=True)
             os.makedirs('filters', exist_ok=True)
-            for batch in range(output.shape[0]):
-                plt.imshow(x[batch][0].cpu().detach().numpy(), cmap='gray')
-                plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Original.png'))
-                plt.clf()
-                for channel in range(output.shape[1]):
-                    plt.imshow(output[batch][channel].cpu().detach().numpy(), cmap='gray')
-                    plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Channel_{channel}.png'))
-                    plt.clf()
-                if batch == 100:
-                    self.done = True
-                    break
-        # output = self.MNN2(output)
         return output
     
 class ConvNet(nn.Module):
     def set_conv_filters(self, selected_3):
         if selected_3 is None:
             return
-        
-        # Ensure selected_3 is a tensor with the right shape
-        selected_3 = torch.tensor(selected_3)  # Convert to tensor if needed
-        if selected_3.shape[1:] != self.conv1.weight.shape[1:]:
-            raise ValueError(f"Shape mismatch: expected {self.conv1.weight.shape[1:]}, got {selected_3.shape[1:]}")
 
-        # Assign selected filters to conv layer
-        with torch.no_grad():  # Ensure this operation does not track gradients
-            self.conv1.weight.data[:selected_3.shape[0]] = selected_3
+        # Extract images from Subset object
+        if isinstance(selected_3, Subset):
+            selected_3 = [selected_3.dataset[i][0] for i in selected_3.indices]  # Extract only image tensors
+
+        # Convert to tensor and ensure correct shape
+        selected_3 = torch.stack(selected_3)  # Stack list into a single tensor
+
+        # Ensure it has the correct shape
+        expected_shape = self.conv1.weight.shape  # (out_channels, in_channels, kernel_height, kernel_width)
+        if selected_3.shape[0] != expected_shape[0]:  # Ensure number of filters match
+            raise ValueError(f"Shape mismatch: expected {expected_shape}, got {selected_3.shape}")
+
+        # Assign weights safely
+        with torch.no_grad():
+            self.conv1.weight.copy_(selected_3.detach().clone())
 
     def __init__(self, selected_3=None):
         super(ConvNet,self).__init__()
@@ -191,25 +194,34 @@ class ConvNet(nn.Module):
         # self.conv2 = nn.Conv2d(20, 10, kernel_size=5)
         self.training = True
         self.done = False
-    
+        os.makedirs('filters/', exist_ok=True)
+        hit_filters_fig, hit_filters_plot = plot_conv_filters(self.conv1)
+        hit_filters_plot.savefig(os.path.join('filters', f"conv_epoch_init.png"))
+        experiment.log_figure(figure_name="filters_conv_init", figure=hit_filters_fig, step=0)
+
     def forward(self, x, epoch):
         output = x
         output = self.conv1(output)
-        if not self.training and epoch == 5 and not self.done:
-            fm_dir = 'feature_maps/conv'
-            os.makedirs(fm_dir, exist_ok=True)
-            for batch in range(output.shape[0]):
-                plt.imshow(x[batch][0].cpu().detach().numpy(), cmap='gray')
-                plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Original.png'))
-                plt.clf()
-                for channel in range(output.shape[1]):
-                    plt.imshow(output[batch][channel].cpu().detach().numpy(), cmap='gray')
-                    plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Channel_{channel}.png'))
-                    plt.clf()
-                if batch == 100:
-                    self.done = True
-                    break
-        output = self.conv2(output)
+        if not self.training and epoch == 100 and not self.done:
+            os.makedirs('filters/', exist_ok=True)
+            hit_filters_fig, hit_filters_plot = plot_conv_filters(self.conv1)
+            hit_filters_plot.savefig(os.path.join('filters', f"conv_epoch{epoch}.png"))
+            experiment.log_figure(figure_name="filters_conv", figure=hit_filters_fig, step=epoch)
+
+            # fm_dir = 'feature_maps/conv'
+            # os.makedirs(fm_dir, exist_ok=True)
+            # for batch in range(output.shape[0]):
+            #     plt.imshow(x[batch][0].cpu().detach().numpy(), cmap='gray')
+            #     plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Original.png'))
+            #     plt.clf()
+            #     for channel in range(output.shape[1]):
+            #         plt.imshow(output[batch][channel].cpu().detach().numpy(), cmap='gray')
+            #         plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Channel_{channel}.png'))
+            #         plt.clf()
+            #     if batch == 100:
+            #         self.done = True
+            #         break
+        # output = self.conv2(output)
         return output
 
 class MNNModel(nn.Module):
