@@ -125,6 +125,25 @@ class BlackAndThrees(Dataset):
         else:
             return self.black_imgs[index - len(self.threes)], 0
         
+class FilterOutThrees(Dataset):
+    def __init__(self, black_imgs, threes, filter_3s):
+        self.black_imgs = black_imgs
+        self.threes = threes
+        self.filter_3s = filter_3s
+    
+    def __len__(self):
+        return len(self.black_imgs) + len(self.threes) + len(self.filter_3s)
+    
+    def __getitem__(self, index):
+        if index < len(self.threes):
+            image, _ = self.threes[index]
+            return image, 1
+        elif index >= len(self.threes) and index < (len(self.threes) + len(self.filter_3s)):
+            image, _ = self.filter_3s[index - len(self.threes)]
+            return image, 2
+        else:
+            return self.black_imgs[index - len(self.threes) - len(self.filter_3s)], 0
+        
 train_loader = DataLoader(BlackAndThrees(black_images_train, train_subset_3), 
                           args.batch_size, shuffle=True, **kwargs)
     
@@ -312,9 +331,18 @@ experiment = start(
   workspace="joannekim"
 )
 
+# Select random indices for threes
 rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
-# print(rand_index)
+
+# Create subset of selected threes
 selected_3 = Subset(train_subset_3, rand_index)
+
+# Remove selected indices from the original dataset
+remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
+train_subset_3 = Subset(train_subset_3, remaining_indices)
+
+train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, selected_3),
+                          args.batch_size, shuffle=True, **kwargs)
 
 dir = "filters/initialize/"
 os.makedirs(dir, exist_ok=True)
@@ -354,9 +382,11 @@ def train(epoch):
 
         original_target = target.cpu().detach().numpy()
 
+        real_target = target
+        real_target = torch.where(real_target == 2, torch.tensor(1, dtype=real_target.dtype), real_target)
         optimizer.zero_grad()
         output = model(data, epoch)
-        loss = F.nll_loss(output.cuda(), target)
+        loss = F.nll_loss(output.cuda(), real_target)
         loss.backward()
         optimizer.step()
 
