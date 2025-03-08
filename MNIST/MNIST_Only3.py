@@ -158,8 +158,9 @@ class MorphNet(nn.Module):
         if self.training and epoch == 1:
             feature_map = output.clone().detach()
             feature_map_list.append(feature_map)
-            experiment.log_metric("feature map", feature_map_list, epoch)
-            # print(feature_map_list)
+            # experiment.log_metric("feature map", feature_map_list, epoch)
+            print(feature_map.shape)
+            print(feature_map[0][0][0][0])
 
         # Plot filters
         if not self.training and not self.done and epoch==100:
@@ -251,7 +252,6 @@ class MNNModel(nn.Module):
         self.morph.training = self.training
         m_output = self.morph(x.cuda(), epoch).cuda()
         output = m_output
-        # print(f"MNNModel output shape: {output.shape}")
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
         # output = self.fc2(output)
@@ -351,6 +351,9 @@ def train(epoch):
             data, target = data.cuda(), target.cuda()
             
         data, target = Variable(data), Variable(target)
+
+        original_target = target.cpu().detach().numpy()
+
         optimizer.zero_grad()
         output = model(data, epoch)
         loss = F.nll_loss(output.cuda(), target)
