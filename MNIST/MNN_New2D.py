@@ -65,7 +65,7 @@ class MNN(nn.Module):
 
     def set_hit_filters(self, selected_3):
         # with torch.no_grad:
-        print(self.K_hit.shape)
+        # print(self.K_hit.shape)
         new_K_hit = self.K_hit.clone()
         for i in range(10):
             image = selected_3[i][0][0]
