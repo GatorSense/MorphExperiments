@@ -174,12 +174,10 @@ class MorphNet(nn.Module):
         output = self.MNN1(output)
 
         # Plot feature map
-        if self.training and epoch == 1:
-            feature_map = output.clone().detach()
-            feature_map_list.append(feature_map)
-            # experiment.log_metric("feature map", feature_map_list, epoch)
-            print(feature_map.shape)
-            print(feature_map[0][0][0][0])
+        # if self.training and epoch == 1:
+        #     fm_val = output.clone().detach().flatten()
+        #     print(fm_val.shape)
+            # print(feature_map[0][0][0][0])
 
         # Plot filters
         if not self.training and not self.done and epoch==100:
@@ -269,8 +267,8 @@ class MNNModel(nn.Module):
     
     def forward(self, x, epoch):
         self.morph.training = self.training
-        m_output = self.morph(x.cuda(), epoch).cuda()
-        output = m_output
+        m_output = self.morph(x.cuda(), epoch)
+        output = m_output.cuda()
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
         # output = self.fc2(output)
@@ -369,6 +367,7 @@ if args.cuda:
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
 
+fm_dict = {"0": [], "1": [], "2": []}
 def train(epoch):
     model.train()
     model.training = True
@@ -380,12 +379,12 @@ def train(epoch):
             
         data, target = Variable(data), Variable(target)
 
-        original_target = target.cpu().detach().numpy()
+        labels = target.cpu().detach().numpy()
 
         real_target = target
         real_target = torch.where(real_target == 2, torch.tensor(1, dtype=real_target.dtype), real_target)
         optimizer.zero_grad()
-        output = model(data, epoch)
+        output, fm_val = model(data, epoch)
         loss = F.nll_loss(output.cuda(), real_target)
         loss.backward()
         optimizer.step()
@@ -394,6 +393,11 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
+        
+        for i, fm in enumerate(fm_val):
+            label = labels[int(i/10)]
+            fm_dict[str(label)].append(fm)
+        # print(fm_dict)
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
 
