@@ -108,7 +108,7 @@ idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 train_subset_3 = Subset(train_dataset, idx_3)
 
 black_images_train = torch.zeros(6000, 1, 28, 28)
-black_images_train += 0.1 * torch.randn_like(black_images_train)
+black_images_train += 0.01 * torch.randn_like(black_images_train)
 
 class BlackAndThrees(Dataset):
     def __init__(self, black_imgs, threes):
@@ -264,18 +264,19 @@ class MNNModel(nn.Module):
         # self.fc3 = nn.Linear(1000,100)
         # self.fc4 = nn.Linear(100,2)
         self.training = True
+        self.activate = nn.LeakyReLU()
     
     def forward(self, x, epoch):
         self.morph.training = self.training
         m_output = self.morph(x.cuda(), epoch)
         output = m_output.cuda()
         output = output.view(output.size(0), -1)
-        output = F.relu(self.fc1(output))
+        output = self.activate(self.fc1(output))
         # output = self.fc2(output)
         # output = F.dropout(output, p=0.5, training=self.training)
         # output = self.fc3(output)
         # output = self.fc4(output)
-        return F.log_softmax(output,1)
+        return F.log_softmax(output,1), m_output
 
 class CNNModel(nn.Module):
     def __init__(self, selected_3=None):
@@ -367,8 +368,8 @@ if args.cuda:
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
 
-fm_dict = {"0": [], "1": [], "2": []}
 def train(epoch):
+    fm_dict = {"0": [], "1": [], "2": []}
     model.train()
     model.training = True
     start_train = time()
@@ -394,10 +395,24 @@ def train(epoch):
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
         
-        for i, fm in enumerate(fm_val):
-            label = labels[int(i/10)]
-            fm_dict[str(label)].append(fm)
-        # print(fm_dict)
+        indices_0 = (labels == 0).nonzero()[0]
+        indices_1 = (labels == 1).nonzero()[0]
+        indices_2 = (labels == 2).nonzero()[0]
+        fm_val = fm_val.detach().cpu().numpy()
+
+        fm_dict["0"].append(fm_val[indices_0].flatten())
+        fm_dict["1"].append(fm_val[indices_1].flatten())
+        fm_dict["2"].append(fm_val[indices_2].flatten())
+
+    fm_dict_np = {}          
+    for key in fm_dict.keys():
+        fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
+
+    hists = fm_histograms(fm_dict_np)
+    experiment.log_figure(figure_name=f'Feature Map Values for Black Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'Feature Map Values for Three Images', figure=hists["1"], step=epoch)
+    experiment.log_figure(figure_name=f'Feature Map Values for Threes in Filters', figure=hists["2"], step=epoch)
+    
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
 
@@ -427,7 +442,7 @@ def test(epoch):
                                 torch.tensor(1, device=target.device), 
                                 torch.tensor(0, device=target.device))
             
-            output = model(data, epoch)
+            output, _ = model(data, epoch)
             target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
             output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
             test_loss += F.nll_loss(output, target, size_average=False).item() # sum up batch loss
