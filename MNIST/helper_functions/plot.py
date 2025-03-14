@@ -116,6 +116,26 @@ def plot_filters(filter_layer):
 
     return fig, plt
 
+def fm_histograms(fm_dict):
+    import matplotlib.pyplot as plt
+    figs = {}
+    
+    for key in ["0", "1", "2"]:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.hist(fm_dict[key], bins=5, alpha=0.75)
+        if key == "0":
+            ax.set_title(f"Feature Map Values for Black Images")
+        if key == "1":
+            ax.set_title(f"Feature Map Values for Three Images")
+        if key == "2":
+            ax.set_title(f"Feature Map Values for Threes in Filters")
+        ax.set_xlabel("Value")
+        ax.set_ylabel("Frequency")
+        ax.set_xlim(fm_dict[key].min(), fm_dict[key].max())
+        figs[key] = fig
+    
+    return figs
+
 import math
 def plot_conv_filters(filter_layer):
     plt.clf()
