@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 import os
+import math
+import numpy as np
 
 # Was at the very top of the script, can't remember how it's different from plot_filters
 def visualize_filters(layer, dir='filters/', title="Filters"):
@@ -29,7 +31,7 @@ def visualize_filters(layer, dir='filters/', title="Filters"):
             plt.savefig(os.path.join(dir, f"filter_{i}_miss.png"))
             plt.clf()
 
-def plot_heatmap(data):
+def plot_heatmap(data, experiment, epoch):
     plt.clf()
     heatmap = plt.imshow(data.T, cmap='viridis')
     plt.colorbar()
@@ -44,10 +46,12 @@ def plot_heatmap(data):
         for j in range(data.T.shape[1]):
             plt.text(j, i, f"{data[j, i]:.0f}", ha='center', va='center', color='w')
 
-    return heatmap.figure
+    experiment.log_figure(figure_name="heatmap", figure=heatmap.figure, step=epoch)
 
-def plot_hit_filters(selected_3):
+def plot_filters_initial(selected_3, experiment, filter_name):
     plt.clf()
+    os.makedirs("filters/initialize/", exist_ok=True)
+
     fig, axes = plt.subplots(2, 5, figsize=(8,4))
 
     for i in range(10):
@@ -62,63 +66,17 @@ def plot_hit_filters(selected_3):
         ax.set_xticks([])
         ax.set_yticks([])
 
-    fig.suptitle ("Hit Filters")
+    fig.suptitle (f"{filter_name} Filters")
     fig.tight_layout()
-    # plt.show()
 
-    return fig, plt
-    # plt.savefig("filters/initialize/initial_filters_hit.png")
-    # experiment.log_figure(figure_name="filters_hit", figure=fig)
+    plt.savefig(f"filters/initialize/initial_filters_{filter_name}.png")
+    experiment.log_figure(figure_name=f"filters_{filter_name}", figure=fig)
 
-def plot_miss_filters(selected_3):
     plt.clf()
-    fig, axes = plt.subplots(2, 5, figsize=(8,4))
+    plt.close()
 
-    for i in range(10):
-        image = selected_3[i][0][0]
-        if (i < 5):
-            ax = axes[0][i]
-        else:
-            ax = axes[1][i-5]
-
-        ax.imshow(1-image, cmap="gray")
-        ax.set_title(f"Filter {i + 1}")
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-    fig.suptitle ("Miss Filters")
-    fig.tight_layout()
-    # plt.show()
-    return fig, plt
-    # plt.savefig("filters/initialize/initial_filters_miss.png")
-    # experiment.log_figure(figure_name="filters_miss", figure=fig)
-
-def plot_filters(filter_layer):
-    plt.clf()
-    filter = filter_layer.data.cpu().numpy()
-    
-    out_channels, in_channels, kernel_size, _ = filter.shape
-
-    fig, axes = plt.subplots(2, 5, figsize=(16,8))
-
-    for i in range(out_channels):
-        for j in range(in_channels):
-            if (i < 5):
-                ax_hit = axes[0][i]
-            else:
-                ax_hit = axes[1][i-5]
-            
-            ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
-            ax_hit.set_title(f"filter [{i},{j}]")
-            ax_hit.set_xticks([])
-            ax_hit.set_yticks([])
-        
-        fig.suptitle("Filters")
-        fig.tight_layout()
-
-    return fig, plt
-
-def plot_and_log_filters(filter_layer, experiment, epoch):
+# Used in forward function
+def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
     plt.clf()
 
     os.makedirs('filters/', exist_ok=True)
@@ -144,11 +102,16 @@ def plot_and_log_filters(filter_layer, experiment, epoch):
         fig.suptitle("Filters")
         fig.tight_layout()
 
-    plt.savefig(os.path.join('filters', f"hit_filter_epoch{epoch}.png"))
-    experiment.log_figure(figure_name="filters_hit", figure=fig, step=epoch)
+    plt.savefig(os.path.join(
+        'filters',
+        f"{filter_name}_filter_epoch{epoch}.png"))
+    experiment.log_figure(figure_name=filter_name,
+                          figure=fig,
+                          step=epoch)
+    plt.clf()
+    plt.close()
 
 def fm_histograms(fm_dict):
-    import matplotlib.pyplot as plt
     figs = {}
     
     for key in ["0", "1", "2"]:
@@ -167,7 +130,16 @@ def fm_histograms(fm_dict):
     
     return figs
 
-import math
+def plot_fm_histogram(fm_dict, experiment, epoch):
+    fm_dict_np = {}          
+    for key in fm_dict.keys():
+        fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
+
+    hists = fm_histograms(fm_dict_np)
+    experiment.log_figure(figure_name=f'Feature Map Values for Black Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'Feature Map Values for Three Images', figure=hists["1"], step=epoch)
+    experiment.log_figure(figure_name=f'Feature Map Values for Threes in Filters', figure=hists["2"], step=epoch)
+
 def plot_conv_filters(filter_layer):
     plt.clf()
     filter = filter_layer.weight.data.cpu().numpy()

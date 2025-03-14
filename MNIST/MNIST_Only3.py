@@ -28,6 +28,9 @@ from helper.logger import log_weights
 from helper.custom_dataset import BlackAndThrees, FilterOutThrees
 from pprint import pprint
 from torch.nn import Parameter
+from dotenv import load_dotenv
+
+load_dotenv()
 
 start_whole = time()
 # Training settings
@@ -59,10 +62,6 @@ pprint(args_dict)
 # #torch.initial_seed()
 # if args.cuda:
 #     torch.cuda.manual_seed(args.seed)
-
-import os
-import torch
-import matplotlib.pyplot as plt
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
@@ -113,20 +112,10 @@ class MorphNet(nn.Module):
         # output = F.max_pool2d(x,2)
         output = self.MNN1(output)
 
-        # Plot feature map
-        # if self.training and epoch == 1:
-        #     fm_val = output.clone().detach().flatten()
-        #     print(fm_val.shape)
-            # print(feature_map[0][0][0][0])
-
         # Plot filters
-        if not self.training and not self.done and epoch==2: # !!!!!Change this back to 100!!!!!!
-            # Start here! I was trying to rename plot_and_log_filters as plot_filters and remove plot_filters
-            plot_and_log_filters(self.MNN1.K_hit, experiment, epoch)
-
-            miss_filters_fig, miss_filters_plot = plot_filters(self.MNN1.K_miss)
-            miss_filters_plot.savefig(os.path.join('filters', f"miss_filter_epoch{epoch}.png"))
-            experiment.log_figure(figure_name="filters_miss", figure=miss_filters_fig, step=epoch)
+        if not self.training and not self.done and epoch==100:
+            plot_filters_forward(self.MNN1.K_hit, experiment, epoch, "hit")
+            plot_filters_forward(self.MNN1.K_miss, experiment, epoch, "miss")
 
         return output
     
@@ -260,7 +249,7 @@ class MCNNModel(nn.Module):
         return F.log_softmax(output,1)
 
 experiment = start(
-  api_key="ACmLuj8t9U7VuG1PAr1yksnM2",
+  api_key=os.environ["COMET_API_KEY"],
   project_name="morphological",
   workspace="joannekim"
 )
@@ -278,15 +267,9 @@ train_subset_3 = Subset(train_subset_3, remaining_indices)
 train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, selected_3),
                           args.batch_size, shuffle=True, **kwargs)
 
-dir = "filters/initialize/"
-os.makedirs(dir, exist_ok=True)
-hit_fig, hit_plt = plot_hit_filters(selected_3)
-hit_plt.savefig(os.path.join(dir, "initial_filters_hit.png"))
-experiment.log_figure(figure_name="filters_hit", figure=hit_fig)
-
-miss_fig, miss_plt = plot_miss_filters(selected_3)
-miss_plt.savefig(os.path.join(dir, "initial_filters_miss.png"))
-experiment.log_figure(figure_name="filters_miss", figure=miss_fig)
+# Plot initial filters
+plot_filters_initial(selected_3, experiment, "hit")
+plot_filters_initial(selected_3, experiment, "miss")
 
 if args.model_type == 'morph':
     model = MNNModel(selected_3)
@@ -339,14 +322,7 @@ def train(epoch):
         fm_dict["1"].append(fm_val[indices_1].flatten())
         fm_dict["2"].append(fm_val[indices_2].flatten())
 
-    fm_dict_np = {}          
-    for key in fm_dict.keys():
-        fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
-
-    hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'Feature Map Values for Black Images', figure=hists["0"], step=epoch)
-    experiment.log_figure(figure_name=f'Feature Map Values for Three Images', figure=hists["1"], step=epoch)
-    experiment.log_figure(figure_name=f'Feature Map Values for Threes in Filters', figure=hists["2"], step=epoch)
+    plot_fm_histogram(fm_dict, experiment, epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
@@ -360,8 +336,6 @@ def test(epoch):
     correct = 0
     model.training = False
 
-    # Store counts predicted as 3 for each digits
-    pred_dict = defaultdict(lambda: [0, 0])
     heatmap_data = np.zeros((10, 2))
     model.eval()
     with torch.no_grad():
@@ -389,13 +363,7 @@ def test(epoch):
             pred_np = pred.cpu().detach().numpy().flatten()
             for i in range(len(original_target)):
                 digit = original_target[i]
-                digit_str = str(digit)
-
-                # update counts for each digit
-                pred_dict[digit_str][pred_np[i]] += 1
                 heatmap_data[digit][pred_np[i]] += 1
-            
-        # print(pred_dict)
 
         test_loss /= len(test_loader.dataset)
 
@@ -409,38 +377,23 @@ def test(epoch):
             labels=["Not Three", "Three"],
         )
 
-        # print(heatmap_data)
-        heatmap = plot_heatmap(heatmap_data)
-        experiment.log_figure(figure_name="heatmap", figure=heatmap, step=epoch)
-        
-        # sort dictionary by key
-        pred_dict_sorted = dict(sorted(pred_dict.items()))
-        pred_df = pd.DataFrame(
-            [(key, val[0], val[1]) for key, val in pred_dict_sorted.items()],
-            columns=["Label", "Not Three", "Three"]
-        )
+        plot_heatmap(heatmap_data, experiment, epoch)
 
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))
-    return correct, pred_df
+    return correct
 
-# add empty dictionary at index 0 to match indexing for accuracy list
-pred_df_list = [{}]
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
-    accuracy[epoch], pred_df = test(epoch)
-    pred_df_list.append(pred_df)
+    accuracy[epoch] = test(epoch)
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
     weights = log_weights(model)
     experiment.log_metrics(weights)
 
-# Log the last predicted label
-experiment.log_table("Predicted_Digit_Labels_Last_Epoch.csv", pred_df_list[args.epochs]) # result from last epoch
 
 accuracy /= 100
 print(accuracy.max(0))
-# print(pred_dict)
 stop_whole = time()
 print('==== Whole Time ====', str(stop_whole-start_whole))
 
