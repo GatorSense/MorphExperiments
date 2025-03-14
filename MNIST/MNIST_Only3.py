@@ -23,9 +23,9 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import pandas as pd
 from collections import defaultdict
-from helper_functions.plot import *
-from helper_functions.logger import log_weights
-from helper_functions.new_dataset import BlackAndThrees
+from helper.plot import *
+from helper.logger import log_weights
+from helper.custom_dataset import BlackAndThrees, FilterOutThrees
 from pprint import pprint
 from torch.nn import Parameter
 
@@ -84,29 +84,9 @@ train_subset_3 = Subset(train_dataset, idx_3)
 black_images_train = torch.zeros(6000, 1, 28, 28)
 black_images_train += 0.01 * torch.randn_like(black_images_train)
 
-        
-class FilterOutThrees(Dataset):
-    def __init__(self, black_imgs, threes, filter_3s):
-        self.black_imgs = black_imgs
-        self.threes = threes
-        self.filter_3s = filter_3s
-    
-    def __len__(self):
-        return len(self.black_imgs) + len(self.threes) + len(self.filter_3s)
-    
-    def __getitem__(self, index):
-        if index < len(self.threes):
-            image, _ = self.threes[index]
-            return image, 1
-        elif index >= len(self.threes) and index < (len(self.threes) + len(self.filter_3s)):
-            image, _ = self.filter_3s[index - len(self.threes)]
-            return image, 2
-        else:
-            return self.black_imgs[index - len(self.threes) - len(self.filter_3s)], 0
-        
 train_loader = DataLoader(BlackAndThrees(black_images_train, train_subset_3), 
                           args.batch_size, shuffle=True, **kwargs)
-    
+
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transforms.Compose([
                        transforms.ToTensor(),
@@ -140,19 +120,14 @@ class MorphNet(nn.Module):
             # print(feature_map[0][0][0][0])
 
         # Plot filters
-        if not self.training and not self.done and epoch==100:
-            os.makedirs('filters/', exist_ok=True)
-            hit_filters_fig, hit_filters_plot = plot_filters(self.MNN1.K_hit)
-            hit_filters_plot.savefig(os.path.join('filters', f"hit_filter_epoch{epoch}.png"))
-            experiment.log_figure(figure_name="filters_hit", figure=hit_filters_fig, step=epoch)
+        if not self.training and not self.done and epoch==2: # !!!!!Change this back to 100!!!!!!
+            # Start here! I was trying to rename plot_and_log_filters as plot_filters and remove plot_filters
+            plot_and_log_filters(self.MNN1.K_hit, experiment, epoch)
 
             miss_filters_fig, miss_filters_plot = plot_filters(self.MNN1.K_miss)
             miss_filters_plot.savefig(os.path.join('filters', f"miss_filter_epoch{epoch}.png"))
             experiment.log_figure(figure_name="filters_miss", figure=miss_filters_fig, step=epoch)
 
-            fm_dir = 'feature_maps/morph'
-            os.makedirs(fm_dir, exist_ok=True)
-            os.makedirs('filters', exist_ok=True)  
         return output
     
 class ConvNet(nn.Module):

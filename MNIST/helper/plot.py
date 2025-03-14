@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
+import os
 
+# Was at the very top of the script, can't remember how it's different from plot_filters
 def visualize_filters(layer, dir='filters/', title="Filters"):
     # Extract filter weights
     K_hit = layer.K_hit.data.cpu().numpy()  # Convert to NumPy
@@ -115,6 +117,35 @@ def plot_filters(filter_layer):
         fig.tight_layout()
 
     return fig, plt
+
+def plot_and_log_filters(filter_layer, experiment, epoch):
+    plt.clf()
+
+    os.makedirs('filters/', exist_ok=True)
+    os.makedirs("feature_maps/morph", exist_ok=True)
+
+    filter = filter_layer.data.cpu().numpy()
+    out_channels, in_channels, kernel_size, _ = filter.shape
+
+    fig, axes = plt.subplots(2, 5, figsize=(16,8))
+
+    for i in range(out_channels):
+        for j in range(in_channels):
+            if (i < 5):
+                ax_hit = axes[0][i]
+            else:
+                ax_hit = axes[1][i-5]
+            
+            ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
+            ax_hit.set_title(f"filter [{i},{j}]")
+            ax_hit.set_xticks([])
+            ax_hit.set_yticks([])
+        
+        fig.suptitle("Filters")
+        fig.tight_layout()
+
+    plt.savefig(os.path.join('filters', f"hit_filter_epoch{epoch}.png"))
+    experiment.log_figure(figure_name="filters_hit", figure=fig, step=epoch)
 
 def fm_histograms(fm_dict):
     import matplotlib.pyplot as plt
