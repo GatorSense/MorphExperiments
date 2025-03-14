@@ -1,5 +1,32 @@
 import matplotlib.pyplot as plt
 
+def visualize_filters(layer, dir='filters/', title="Filters"):
+    # Extract filter weights
+    K_hit = layer.K_hit.data.cpu().numpy()  # Convert to NumPy
+    K_miss = layer.K_miss.data.cpu().numpy()
+    
+    out_channels, in_channels, kernel_size, _ = K_hit.shape
+
+    # Ensure the directory exists
+    os.makedirs(dir, exist_ok=True)
+
+    # Iterate over filters
+    for i in range(out_channels):
+        for j in range(in_channels):
+            # Save K_hit
+            plt.imshow(K_hit[i, j], cmap='gray', interpolation='nearest')
+            plt.title(f"K_hit [{i},{j}]")
+            plt.axis('off')
+            plt.savefig(os.path.join(dir, f"filter_{i}_hit.png"))
+            plt.clf()
+
+            # Save K_miss
+            plt.imshow(K_miss[i, j], cmap='gray', interpolation='nearest')
+            plt.title(f"K_miss [{i},{j}]")
+            plt.axis('off')
+            plt.savefig(os.path.join(dir, f"filter_{i}_miss.png"))
+            plt.clf()
+
 def plot_heatmap(data):
     plt.clf()
     heatmap = plt.imshow(data.T, cmap='viridis')

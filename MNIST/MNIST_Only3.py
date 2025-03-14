@@ -25,6 +25,7 @@ import pandas as pd
 from collections import defaultdict
 from helper_functions.plot import *
 from helper_functions.logger import log_weights
+from helper_functions.new_dataset import BlackAndThrees
 from pprint import pprint
 from torch.nn import Parameter
 
@@ -63,33 +64,6 @@ import os
 import torch
 import matplotlib.pyplot as plt
 
-def visualize_filters(layer, dir='filters/', title="Filters"):
-    # Extract filter weights
-    K_hit = layer.K_hit.data.cpu().numpy()  # Convert to NumPy
-    K_miss = layer.K_miss.data.cpu().numpy()
-    
-    out_channels, in_channels, kernel_size, _ = K_hit.shape
-
-    # Ensure the directory exists
-    os.makedirs(dir, exist_ok=True)
-
-    # Iterate over filters
-    for i in range(out_channels):
-        for j in range(in_channels):
-            # Save K_hit
-            plt.imshow(K_hit[i, j], cmap='gray', interpolation='nearest')
-            plt.title(f"K_hit [{i},{j}]")
-            plt.axis('off')
-            plt.savefig(os.path.join(dir, f"filter_{i}_hit.png"))
-            plt.clf()
-
-            # Save K_miss
-            plt.imshow(K_miss[i, j], cmap='gray', interpolation='nearest')
-            plt.title(f"K_miss [{i},{j}]")
-            plt.axis('off')
-            plt.savefig(os.path.join(dir, f"filter_{i}_miss.png"))
-            plt.clf()
-
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 train_dataset = datasets.MNIST(
@@ -110,20 +84,6 @@ train_subset_3 = Subset(train_dataset, idx_3)
 black_images_train = torch.zeros(6000, 1, 28, 28)
 black_images_train += 0.1 * torch.randn_like(black_images_train)
 
-class BlackAndThrees(Dataset):
-    def __init__(self, black_imgs, threes):
-        self.black_imgs = black_imgs
-        self.threes = threes
-    
-    def __len__(self):
-        return len(self.black_imgs) + len(self.threes)
-    
-    def __getitem__(self, index):
-        if index < len(self.threes):
-            image, _ = self.threes[index]
-            return image, 1
-        else:
-            return self.black_imgs[index - len(self.threes)], 0
         
 class FilterOutThrees(Dataset):
     def __init__(self, black_imgs, threes, filter_3s):
