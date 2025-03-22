@@ -76,7 +76,7 @@ class MNN(nn.Module):
         new_K_miss = self.K_miss.clone()
         for i in range(10):
             image = selected_3[i][0][0]
-            new_K_miss[i][0] = 1 - image
+            new_K_miss[i][0] = image
         self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
 
     def set_hitmiss_filters_to_3(self, selected_3):

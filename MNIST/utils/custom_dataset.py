@@ -1,4 +1,5 @@
 from torch.utils.data import Dataset
+import torch
 
 class BlackAndThrees(Dataset):
     def __init__(self, black_imgs, threes):

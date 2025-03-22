@@ -23,12 +23,13 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import pandas as pd
 from collections import defaultdict
-from helper.plot import *
-from helper.logger import log_weights
-from helper.custom_dataset import BlackAndThrees, FilterOutThrees
+from utils.plot import *
+from utils.logger import log_weights
+from utils.custom_dataset import BlackAndThrees, FilterOutThrees
 from pprint import pprint
 from torch.nn import Parameter
 from dotenv import load_dotenv
+import kornia
 
 load_dotenv()
 
@@ -296,7 +297,8 @@ def train(epoch):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
             
-        data, target = Variable(data), Variable(target)
+        kernel = torch.ones(3, 3)
+        data, target = Variable(kornia.morphology.dilation(data.cuda(), kernel.cuda())), Variable(target)
 
         labels = target.cpu().detach().numpy()
 
@@ -342,7 +344,8 @@ def test(epoch):
         for data, target in test_loader:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
-            data, target = Variable(data), Variable(target)
+            kernel = torch.ones(3, 3)
+            data, target = Variable(kornia.morphology.dilation(data.cuda(), kernel.cuda())), Variable(target)
 
             # Get original target to determine actual number
             original_target = target.cpu().detach().numpy()
