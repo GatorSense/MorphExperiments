@@ -82,10 +82,7 @@ idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 train_subset_3 = Subset(train_dataset, idx_3)
 
 black_images_train = torch.zeros(6000, 1, 28, 28)
-black_images_train += 0.01 * torch.randn_like(black_images_train)
-
-train_loader = DataLoader(BlackAndThrees(black_images_train, train_subset_3), 
-                          args.batch_size, shuffle=True, **kwargs)
+black_images_train += 0.001 * torch.randn_like(black_images_train)
 
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transforms.Compose([
@@ -261,11 +258,33 @@ rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
 # Create subset of selected threes
 selected_3 = Subset(train_subset_3, rand_index)
 
-# Remove selected indices from the original dataset
 remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
-train_subset_3 = Subset(train_subset_3, remaining_indices)
+kernel = torch.ones((3, 3))
+dilated_images = []
+for idx in remaining_indices:
+    img, label = train_subset_3[idx]  # assuming each item returns (image, label)
+    img = img.unsqueeze(0)  # Add batch dimension if needed, shape becomes [1, C, H, W]
+    dilated_img = kornia.morphology.dilation(img, kernel)
+    dilated_images.append((dilated_img.squeeze(0), label))  # Remove batch dim if needed
 
-train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, selected_3),
+remaining_indices = list(rand_index)
+kernel = torch.ones((3, 3))
+dilated_filters = []
+for idx in remaining_indices:
+    img, label = train_subset_3[idx]  # assuming each item returns (image, label)
+    plt.imshow(img[0], cmap='gray')
+    plt.show()
+    img = img.unsqueeze(0)  # Add batch dimension if needed, shape becomes [1, C, H, W]
+    dilated_img = kornia.morphology.dilation(img, kernel)
+    plt.imshow(dilated_img[0][0], cmap='gray')
+    plt.show()
+    dilated_filters.append((dilated_img.squeeze(0), label))  # Remove batch dim if needed
+
+images, labels = zip(*dilated_images)
+images_tensor = torch.stack(images)
+labels_tensor = torch.tensor(labels)
+
+train_loader = DataLoader(FilterOutThrees(black_images_train, dilated_images, dilated_filters),
                           args.batch_size, shuffle=True, **kwargs)
 
 # Plot initial filters
@@ -298,7 +317,7 @@ def train(epoch):
             data, target = data.cuda(), target.cuda()
             
         kernel = torch.ones(3, 3)
-        data, target = Variable(kornia.morphology.dilation(data.cuda(), kernel.cuda())), Variable(target)
+        data, target = Variable(data.cuda()), Variable(target)
 
         labels = target.cpu().detach().numpy()
 
