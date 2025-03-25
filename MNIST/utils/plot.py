@@ -131,7 +131,7 @@ def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
         fig.tight_layout()
 
     # Locally save the filter images only if it's epoch 100
-    if epoch == 2:
+    if epoch == 100:
         plt.savefig(os.path.join(
             'filters',
             f"{filter_name}_filter_epoch{epoch}.png"))
