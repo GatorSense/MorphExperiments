@@ -337,29 +337,43 @@ def test(epoch):
     model.training = False
 
     heatmap_data = np.zeros((10, 2))
-    model.eval()
+
+    # Initialize lists to collect feature maps
+    fms_0_2 = []
+    fms_4_9 = []
+
     with torch.no_grad():
         for data, target in test_loader:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data.cuda()), Variable(target)
 
-            # Get original target to determine actual number
             original_target = target.cpu().detach().numpy()
 
             target = torch.where(target == 3, 
-                                torch.tensor(1, device=target.device), 
-                                torch.tensor(0, device=target.device))
-            
-            output, _ = model(data, epoch)
+                                 torch.tensor(1, device=target.device), 
+                                 torch.tensor(0, device=target.device))
+
+            output, fms = model(data, epoch)
+
+            # Accumulate metrics
             target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
             output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
-            test_loss += F.nll_loss(output, target, size_average=False).item() # sum up batch loss
-            pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
-            #print(pred)
+            test_loss += F.nll_loss(output, target, reduction='sum').item()
+            pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-            # store predicted labels in the dict
+            # Get feature maps for original targets < 3 and > 3
+            original_target_tensor = torch.tensor(original_target).to(fms.device)
+
+            indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
+            indices_4_9 = (original_target_tensor > 3).nonzero(as_tuple=True)[0]
+
+            if indices_0_2.numel() > 0:
+                fms_0_2.append(fms[indices_0_2].cpu().detach().numpy())
+            if indices_4_9.numel() > 0:
+                fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
+
             pred_np = pred.cpu().detach().numpy().flatten()
             for i in range(len(original_target)):
                 digit = original_target[i]
@@ -370,17 +384,22 @@ def test(epoch):
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
-        
+
         experiment.log_confusion_matrix(
             y_true=target_total,
             y_predicted=output_total,
             labels=["Not Three", "Three"],
         )
 
+        # Now plot the histograms using accumulated feature maps
+        fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
+        plot_fm_histogram_test(fm_hists, experiment, epoch)
+
         plot_heatmap(heatmap_data, experiment, epoch)
 
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))
+
     return correct
 
 accuracy = torch.zeros(args.epochs+1)
