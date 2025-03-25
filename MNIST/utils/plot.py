@@ -75,6 +75,34 @@ def plot_filters_initial(selected_3, experiment, filter_name):
     plt.clf()
     plt.close()
 
+# merge with above function in the future
+def plot_morphed_filters_initial(filters, experiment, filter_name):
+    plt.clf()
+    os.makedirs("filters/initialize/", exist_ok=True)
+
+    fig, axes = plt.subplots(2, 5, figsize=(8,4))
+
+    for i, filter in enumerate(filters):
+        image = filter[0][0]
+        if (i < 5):
+            ax = axes[0][i]
+        else:
+            ax = axes[1][i-5]
+
+        ax.imshow(image, cmap="gray")
+        ax.set_title(f"Filter {i + 1}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    fig.suptitle (f"{filter_name} Filters")
+    fig.tight_layout()
+
+    plt.savefig(f"filters/initialize/initial_filters_{filter_name}.png")
+    experiment.log_figure(figure_name=f"filters_{filter_name}", figure=fig)
+
+    plt.clf()
+    plt.close()
+
 # Used in forward function
 def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
     plt.clf()
@@ -83,7 +111,7 @@ def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
     os.makedirs("feature_maps/morph", exist_ok=True)
 
     filter = filter_layer.data.cpu().numpy()
-    out_channels, in_channels, kernel_size, _ = filter.shape
+    out_channels, in_channels, _, _ = filter.shape
 
     fig, axes = plt.subplots(2, 5, figsize=(16,8))
 

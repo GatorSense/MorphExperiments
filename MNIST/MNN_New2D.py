@@ -42,7 +42,7 @@ class _Hitmiss(Function):
 
 class MNN(nn.Module):
 
-    def __init__(self, in_channels, out_channels, kernel_size, selected_3=None):
+    def __init__(self, in_channels, out_channels, kernel_size, dilated_filters=None, eroded_filters=None):
 
         super(MNN, self).__init__()
         self.in_channels = in_channels
@@ -51,8 +51,9 @@ class MNN(nn.Module):
         self.K_hit = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
         self.K_miss = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
         
-        if (selected_3):
-            self.set_hitmiss_filters_to_3(selected_3)
+        if (dilated_filters and eroded_filters):
+            # self.set_hitmiss_filters_to_3(selected_3)
+            self.set_hitmiss_filters_to_morphed_3(dilated_filters, eroded_filters)
         else:
             self.reset_parameters()
 
@@ -82,6 +83,24 @@ class MNN(nn.Module):
     def set_hitmiss_filters_to_3(self, selected_3):
         self.set_hit_filters(selected_3)
         self.set_miss_filters(selected_3)
+
+    # def set_hit_filters_morphed(self, eroded_filters):
+    #     new_K_hit = self.K_hit.clone()
+    #     for i in range(10):
+    #         image = eroded_filters[i][0][0]
+    #         new_K_hit[i][0] = image
+    #     self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
+    
+    # def set_miss_filters_morphed(self, dilated_filters):
+    #     new_K_miss = self.K_miss.clone()
+    #     for i in range(10):
+    #         image = dilated_filters[i][0][0]
+    #         new_K_miss[i][0] = image
+    #     self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
+
+    def set_hitmiss_filters_to_morphed_3(self, dilated_filters, eroded_filters):
+        self.set_hit_filters(eroded_filters)
+        self.set_miss_filters(dilated_filters)
 
 
     def forward(self, input):

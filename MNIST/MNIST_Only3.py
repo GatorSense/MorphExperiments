@@ -22,10 +22,9 @@ from torch.utils.data import DataLoader, Subset
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import pandas as pd
-from collections import defaultdict
 from utils.plot import *
 from utils.logger import log_weights
-from utils.custom_dataset import BlackAndThrees, FilterOutThrees
+from utils.custom_dataset import BlackAndThrees, FilterOutThrees, generate_hitmiss_morphed_filters
 from pprint import pprint
 from torch.nn import Parameter
 from dotenv import load_dotenv
@@ -94,10 +93,10 @@ test_loader = torch.utils.data.DataLoader(
 feature_map_list = []
 
 class MorphNet(nn.Module):
-    def __init__(self, selected_3=None):
+    def __init__(self, dilated_filters=None, eroded_filters=None):
         super(MorphNet,self).__init__()
-        if (selected_3):
-            self.MNN1 = MNN(1,10,28, selected_3)
+        if (dilated_filters and eroded_filters):
+            self.MNN1 = MNN(1,10,28, dilated_filters, eroded_filters)
         else:
             self.MNN1 = MNN(1,10,28)
         # self.MNN2 = MNN(10,5,5)
@@ -176,10 +175,10 @@ class ConvNet(nn.Module):
         return output
 
 class MNNModel(nn.Module):
-    def __init__(self, selected_3=None):
+    def __init__(self, dilated_filters=None, eroded_filters=None):
         super(MNNModel,self).__init__()
-        if (selected_3):
-            self.morph = MorphNet(selected_3)
+        if (dilated_filters and eroded_filters):
+            self.morph = MorphNet(dilated_filters, eroded_filters)
         else:
             self.morph = MorphNet()
         self.fc1 = nn.Linear(10,2)
@@ -257,42 +256,40 @@ rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
 
 # Create subset of selected threes
 selected_3 = Subset(train_subset_3, rand_index)
+kernel = torch.ones((2, 2))
 
-remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
-kernel = torch.ones((3, 3))
-dilated_images = []
-for idx in remaining_indices:
-    img, label = train_subset_3[idx]  # assuming each item returns (image, label)
-    img = img.unsqueeze(0)  # Add batch dimension if needed, shape becomes [1, C, H, W]
-    dilated_img = kornia.morphology.dilation(img, kernel)
-    dilated_images.append((dilated_img.squeeze(0), label))  # Remove batch dim if needed
+# Dilating/Eroding input images (Not used)
+# remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
+# dilated_images = []
+# eroded_images = []
+# for idx in remaining_indices:
+#     img, label = train_subset_3[idx]  # assuming each item returns (image, label)
+#     img = img.unsqueeze(0)  # Add batch dimension if needed, shape becomes [1, C, H, W]
+#     dilated_img = kornia.morphology.dilation(img, kernel)
+#     dilated_images.append((dilated_img.squeeze(0), label))  # Remove batch dim if needed
+#     eroded_img = kornia.morphology.erosion(img, kernel)
+#     eroded_images.append((eroded_img.squeeze(0), label))
 
-remaining_indices = list(rand_index)
-kernel = torch.ones((3, 3))
-dilated_filters = []
-for idx in remaining_indices:
-    img, label = train_subset_3[idx]  # assuming each item returns (image, label)
-    plt.imshow(img[0], cmap='gray')
-    plt.show()
-    img = img.unsqueeze(0)  # Add batch dimension if needed, shape becomes [1, C, H, W]
-    dilated_img = kornia.morphology.dilation(img, kernel)
-    plt.imshow(dilated_img[0][0], cmap='gray')
-    plt.show()
-    dilated_filters.append((dilated_img.squeeze(0), label))  # Remove batch dim if needed
+# images, labels = zip(*dilated_images)
+# images_tensor = torch.stack(images)
+# labels_tensor = torch.tensor(labels)
 
-images, labels = zip(*dilated_images)
-images_tensor = torch.stack(images)
-labels_tensor = torch.tensor(labels)
+# Dilating/Eroding filter images
+dilated_filters, eroded_filters = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
 
-train_loader = DataLoader(FilterOutThrees(black_images_train, dilated_images, dilated_filters),
+# Although we have 2 versions of filters, any of dilated/eroded filter should be enough
+# to indicate if an image is used as a filter -- double check!
+train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, dilated_filters),
                           args.batch_size, shuffle=True, **kwargs)
 
 # Plot initial filters
-plot_filters_initial(selected_3, experiment, "hit")
-plot_filters_initial(selected_3, experiment, "miss")
+# plot_filters_initial(selected_3, experiment, "hit")
+# plot_filters_initial(selected_3, experiment, "miss")
+plot_morphed_filters_initial(eroded_filters, experiment, "hit")
+plot_morphed_filters_initial(dilated_filters, experiment, "miss")
 
 if args.model_type == 'morph':
-    model = MNNModel(selected_3)
+    model = MNNModel(dilated_filters, eroded_filters)
 elif args.model_type == 'conv':
     rand_index = (np.random.rand(20) * len(train_subset_3)).astype(int)
     selected_3 = Subset(train_subset_3, rand_index)
@@ -316,7 +313,7 @@ def train(epoch):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
             
-        kernel = torch.ones(3, 3)
+        # kernel = torch.ones(3, 3)
         data, target = Variable(data.cuda()), Variable(target)
 
         labels = target.cpu().detach().numpy()
@@ -363,8 +360,10 @@ def test(epoch):
         for data, target in test_loader:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
-            kernel = torch.ones(3, 3)
-            data, target = Variable(kornia.morphology.dilation(data.cuda(), kernel.cuda())), Variable(target)
+            # Don't apply morphology to input images
+            # kernel = torch.ones(3, 3)
+            # data, target = Variable(kornia.morphology.dilation(data.cuda(), kernel.cuda())), Variable(target)
+            data, target = Variable(data), Variable(target)
 
             # Get original target to determine actual number
             original_target = target.cpu().detach().numpy()
