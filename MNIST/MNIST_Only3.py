@@ -27,7 +27,7 @@ import pandas as pd
 from collections import defaultdict
 from utils.plot import *
 from utils.logger import log_weights
-from utils.custom_dataset import BlackAndThrees, FilterOutThrees
+from utils.custom_dataset import BlackAndThrees, FilterOutThrees, generate_hitmiss_morphed_filters
 from pprint import pprint
 from torch.nn import Parameter
 from dotenv import load_dotenv
@@ -44,7 +44,7 @@ parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                     help='input batch size for testing (default: 1000)')
 parser.add_argument('--epochs', type=int, default=100, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.005, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                     help='SGD momentum (default: 0.5)')
@@ -96,16 +96,17 @@ test_loader = torch.utils.data.DataLoader(
 feature_map_list = []
 
 class MorphNet(nn.Module):
-    def __init__(self, selected_3=None):
+    def __init__(self, dilated_filters=None, eroded_filters=None):
         super(MorphNet,self).__init__()
-        if (selected_3):
-            self.MNN1 = MNN(1,10,28, selected_3)
+        if (dilated_filters and eroded_filters):
+            self.MNN1 = MNN(1,10,28, dilated_filters, eroded_filters)
         else:
             self.MNN1 = MNN(1,10,28)
         # self.MNN2 = MNN(10,5,5)
         self.training = True
         self.passes = 0
         self.done = False
+        self.log_filters = False
     
     def forward(self, x, epoch):
         output = x
@@ -113,12 +114,12 @@ class MorphNet(nn.Module):
         output = self.MNN1(output)
 
         # Plot filters
-        if not self.training and not self.done and epoch==100:
+        if not self.done and self.log_filters:
             plot_filters_forward(self.MNN1.K_hit, experiment, epoch, "hit")
             plot_filters_forward(self.MNN1.K_miss, experiment, epoch, "miss")
 
         return output
-    
+
 class ConvNet(nn.Module):
     def set_conv_filters(self, selected_3):
         if selected_3 is None:
@@ -178,16 +179,17 @@ class ConvNet(nn.Module):
         return output
 
 class MNNModel(nn.Module):
-    def __init__(self, selected_3=None):
+    def __init__(self, dilated_filters=None, eroded_filters=None):
         super(MNNModel,self).__init__()
-        if (selected_3):
-            self.morph = MorphNet(selected_3)
+        if (dilated_filters and eroded_filters):
+            self.morph = MorphNet(dilated_filters, eroded_filters)
         else:
             self.morph = MorphNet()
         self.fc1 = nn.Linear(10,2)
         # self.fc3 = nn.Linear(1000,100)
         # self.fc4 = nn.Linear(100,2)
         self.training = True
+        # self.log_filters = False
         self.activate = nn.LeakyReLU()
     
     def forward(self, x, epoch):
@@ -201,6 +203,11 @@ class MNNModel(nn.Module):
         # output = self.fc3(output)
         # output = self.fc4(output)
         return F.log_softmax(output,1), m_output
+    
+    # Turn on and off the logging
+    def log_filters(self, bool):
+        # self.log_filters = bool # I don't think we need this property, but keep it here just in case
+        self.morph.log_filters = bool
 
 class CNNModel(nn.Module):
     def __init__(self, selected_3=None):
@@ -259,6 +266,15 @@ rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
 
 # Create subset of selected threes
 selected_3 = Subset(train_subset_3, rand_index)
+kernel = torch.ones((2, 2))
+
+# Dilating/Eroding filter images
+dilated_filters, eroded_filters = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
+
+# Although we have 2 versions of filters, any of dilated/eroded filter should be enough
+# to indicate if an image is used as a filter -- double check!
+train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, dilated_filters),
+                        args.batch_size, shuffle=True, **kwargs)
 
 remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
 
@@ -268,11 +284,11 @@ train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, se
                           args.batch_size, shuffle=True, **kwargs)
 
 # Plot initial filters
-plot_filters_initial(selected_3, experiment, "hit")
-plot_filters_initial(selected_3, experiment, "miss")
+plot_morphed_filters_initial(eroded_filters, experiment, "hit")
+plot_morphed_filters_initial(dilated_filters, experiment, "miss")
 
 if args.model_type == 'morph':
-    model = MNNModel(selected_3)
+    model = MNNModel(dilated_filters, eroded_filters)
 elif args.model_type == 'conv':
     rand_index = (np.random.rand(20) * len(train_subset_3)).astype(int)
     selected_3 = Subset(train_subset_3, rand_index)
@@ -296,14 +312,23 @@ def train(epoch):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
             
-        data, target = Variable(data.cuda()), Variable(target)
+        # data, target = Variable(data.cuda()), Variable(target)
+        data, target = Variable(data), Variable(target)
 
         labels = target.cpu().detach().numpy()
 
         real_target = target
         real_target = torch.where(real_target == 2, torch.tensor(1, dtype=real_target.dtype), real_target)
         optimizer.zero_grad()
-        output, fm_val = model(data, epoch)
+
+        # Only log filters for the first batch
+        if (batch_idx == 0):
+            model.log_filters(True)
+            output, fm_val = model(data, epoch)
+            model.log_filters(False)
+        else:
+            output, fm_val = model(data, epoch)
+
         loss = F.nll_loss(output.cuda(), real_target)
         loss.backward()
         optimizer.step()
@@ -337,43 +362,29 @@ def test(epoch):
     model.training = False
 
     heatmap_data = np.zeros((10, 2))
-
-    # Initialize lists to collect feature maps
-    fms_0_2 = []
-    fms_4_9 = []
-
+    model.eval()
     with torch.no_grad():
         for data, target in test_loader:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data.cuda()), Variable(target)
 
+            # Get original target to determine actual number
             original_target = target.cpu().detach().numpy()
 
             target = torch.where(target == 3, 
-                                 torch.tensor(1, device=target.device), 
-                                 torch.tensor(0, device=target.device))
-
-            output, fms = model(data, epoch)
-
-            # Accumulate metrics
+                                torch.tensor(1, device=target.device), 
+                                torch.tensor(0, device=target.device))
+            
+            output, _ = model(data, epoch)
             target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
             output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()
-            pred = output.data.max(1, keepdim=True)[1]
+            test_loss += F.nll_loss(output, target, size_average=False).item() # sum up batch loss
+            pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+            #print(pred)
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-            # Get feature maps for original targets < 3 and > 3
-            original_target_tensor = torch.tensor(original_target).to(fms.device)
-
-            indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
-            indices_4_9 = (original_target_tensor > 3).nonzero(as_tuple=True)[0]
-
-            if indices_0_2.numel() > 0:
-                fms_0_2.append(fms[indices_0_2].cpu().detach().numpy())
-            if indices_4_9.numel() > 0:
-                fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
-
+            # store predicted labels in the dict
             pred_np = pred.cpu().detach().numpy().flatten()
             for i in range(len(original_target)):
                 digit = original_target[i]
@@ -384,22 +395,17 @@ def test(epoch):
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
-
+        
         experiment.log_confusion_matrix(
             y_true=target_total,
             y_predicted=output_total,
             labels=["Not Three", "Three"],
         )
 
-        # Now plot the histograms using accumulated feature maps
-        fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
-        plot_fm_histogram_test(fm_hists, experiment, epoch)
-
         plot_heatmap(heatmap_data, experiment, epoch)
 
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))
-
     return correct
 
 accuracy = torch.zeros(args.epochs+1)
