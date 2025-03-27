@@ -269,12 +269,7 @@ selected_3 = Subset(train_subset_3, rand_index)
 kernel = torch.ones((2, 2))
 
 # Dilating/Eroding filter images
-dilated_filters, eroded_filters = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
-
-# Although we have 2 versions of filters, any of dilated/eroded filter should be enough
-# to indicate if an image is used as a filter -- double check!
-train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, dilated_filters),
-                        args.batch_size, shuffle=True, **kwargs)
+# dilated_filters, eroded_filters = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
 
 remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
 
