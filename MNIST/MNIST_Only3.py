@@ -44,7 +44,7 @@ parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                     help='input batch size for testing (default: 1000)')
 parser.add_argument('--epochs', type=int, default=100, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                     help='SGD momentum (default: 0.5)')
@@ -68,14 +68,16 @@ pprint(args_dict)
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
+transform=transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+    ])
+
 train_dataset = datasets.MNIST(
     root='../data',
     train=True,
     download=True,
-    transform=transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-    ])
+    transform=transform
 )
 
 targets = train_dataset.targets
@@ -83,8 +85,17 @@ idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 
 train_subset_3 = Subset(train_dataset, idx_3)
 
-black_images_train = torch.zeros(6000, 1, 28, 28)
-black_images_train += 0.1 * torch.randn_like(black_images_train)
+# black_images_train = torch.zeros(6000, 1, 28, 28)
+# black_images_train += 0.1 * torch.randn_like(black_images_train)
+
+test_dataset = datasets.KMNIST(
+    root='./data', 
+    train=False, 
+    download=True, 
+    transform=transform
+)
+
+black_images_train = torch.stack([img for img, _ in test_dataset])
 
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transforms.Compose([
