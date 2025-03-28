@@ -29,12 +29,12 @@ class _Hitmiss(Function):
         for i in range (out_channels):
             F_hit = (input-K_hit[i])*-1
             F_hit = F_hit.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)     # reshape tensor to be 5 dimension for max_pool3D function
-            F_hit = -1 * F.relu(-1 * F_hit).sum()
+            F_hit = (-1 * F.relu(F_hit)).sum()
             F_miss = input-K_miss[i]
             F_miss = F_miss.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)   # reshape tensor to be 5 dimension for max_pool3D function
             F_miss = F.relu(F_miss).sum()
             
-            F_map[:,i] = F_hit *-1 - F_miss
+            F_map[:,i] = F_hit - F_miss
         
         F_map = F_map.view(batch_size, out_Fmap, fh, fh)
         return  F_map
