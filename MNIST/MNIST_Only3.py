@@ -85,17 +85,17 @@ idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 
 train_subset_3 = Subset(train_dataset, idx_3)
 
-# black_images_train = torch.zeros(6000, 1, 28, 28)
-# black_images_train += 0.1 * torch.randn_like(black_images_train)
-
-test_dataset = datasets.KMNIST(
+# Load KMNIST data
+kmnist_dataset = datasets.KMNIST(
     root='./data', 
     train=False, 
     download=True, 
     transform=transform
 )
 
-black_images_train = torch.stack([img for img, _ in test_dataset])
+# black_images_train = torch.zeros(6000, 1, 28, 28)
+# black_images_train += 0.1 * torch.randn_like(black_images_train)
+black_images_train = torch.stack([img for img, _ in kmnist_dataset])
 
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transforms.Compose([
@@ -107,10 +107,10 @@ test_loader = torch.utils.data.DataLoader(
 feature_map_list = []
 
 class MorphNet(nn.Module):
-    def __init__(self, dilated_filters=None, eroded_filters=None):
+    def __init__(self, filter_list=None):
         super(MorphNet,self).__init__()
-        if (dilated_filters and eroded_filters):
-            self.MNN1 = MNN(1,10,28, dilated_filters, eroded_filters)
+        if (filter_list):
+            self.MNN1 = MNN(1,10,28, filter_list)
         else:
             self.MNN1 = MNN(1,10,28)
         # self.MNN2 = MNN(10,5,5)
@@ -190,10 +190,10 @@ class ConvNet(nn.Module):
         return output
 
 class MNNModel(nn.Module):
-    def __init__(self, dilated_filters=None, eroded_filters=None):
+    def __init__(self, filter_list=None):
         super(MNNModel,self).__init__()
-        if (dilated_filters and eroded_filters):
-            self.morph = MorphNet(dilated_filters, eroded_filters)
+        if (filter_list):
+            self.morph = MorphNet(filter_list)
         else:
             self.morph = MorphNet()
         self.fc1 = nn.Linear(10,2)
@@ -279,30 +279,28 @@ rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
 selected_3 = Subset(train_subset_3, rand_index)
 kernel = torch.ones((2, 2))
 
-# Dilating/Eroding filter images
-dilated_filters, eroded_filters = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
-
-# Although we have 2 versions of filters, any of dilated/eroded filter should be enough
-# to indicate if an image is used as a filter -- double check!
-train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, dilated_filters),
-                        args.batch_size, shuffle=True, **kwargs)
-
 remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
 
-train_subset_3 = Subset(train_subset_3, remaining_indices)
+train_subset_3_including_filters = Subset(train_subset_3, remaining_indices)
 
-train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, selected_3),
+train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3_including_filters, selected_3),
                           args.batch_size, shuffle=True, **kwargs)
 
-# Plot initial filters
-plot_morphed_filters_initial(eroded_filters, experiment, "hit")
-plot_morphed_filters_initial(dilated_filters, experiment, "miss")
+# Comment out either of the blocks!
+# Use original images (No dilation/erosion)
+filter_list = [selected_3]
+plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
+
+# Dilating/Eroding filter images
+# filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
+# plot_morphed_filters_initial(filter_list[0], experiment, "miss") # dilation
+# plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
 
 if args.model_type == 'morph':
-    model = MNNModel(dilated_filters, eroded_filters)
+    model = MNNModel(filter_list)
 elif args.model_type == 'conv':
-    rand_index = (np.random.rand(20) * len(train_subset_3)).astype(int)
-    selected_3 = Subset(train_subset_3, rand_index)
+    rand_index = (np.random.rand(20) * len(train_subset_3_including_filters)).astype(int)
+    selected_3 = Subset(train_subset_3_including_filters, rand_index)
     model = CNNModel(selected_3)
 else:
     model = MCNNModel()
