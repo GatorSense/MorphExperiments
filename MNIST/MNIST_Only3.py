@@ -264,16 +264,14 @@ filter_list = [selected_3]
 plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
 
 # Dilating/Eroding filter images
-# filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
-# plot_morphed_filters_initial(filter_list[0], experiment, "miss") # dilation
-# plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
+filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
+plot_morphed_filters_initial(filter_list[0], experiment, "miss") # dilation
+plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
 
 # Initialize model
 if args.model_type == 'morph':
     model = MNNModel(filter_list)
 elif args.model_type == 'conv':
-    rand_index = (np.random.rand(20) * len(train_subset_3_including_filters)).astype(int)
-    selected_3 = Subset(train_subset_3_including_filters, rand_index)
     model = CNNModel(selected_3)
 else:
     model = MCNNModel()
