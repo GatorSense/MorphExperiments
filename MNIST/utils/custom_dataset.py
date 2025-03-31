@@ -38,23 +38,6 @@ class FilterOutThrees(Dataset):
         else:
             return self.black_imgs[index - len(self.threes) - len(self.filter_3s)], 0
         
-# class BlackAndThreesWithFilters(Dataset):
-#     def __init__(self, black_imgs, threes, dilated_threes, eroded_threes, filter_index):
-#         self.black_imgs = black_imgs
-#         self.threes = threes
-#         self.dilated_threes = dilated_threes
-#         self.eroded_threes = eroded_threes
-#         self.filter_index = filter_index
-
-#     def __len__(self):
-#         return len(self.black_imgs) + len(self.threes)
-    
-#     def __getitem__(self, index):
-#         if index < len(self.threes):
-#             image, _ = self.threes[index]
-#             return image, 1
-#         else:
-#             return self.black_imgs[index - len(self.threes)], 0
         
 def generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel, show_plots=False):
     filter_indices = list(rand_index)
@@ -78,4 +61,4 @@ def generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel, show_pl
             plt.imshow(eroded_img[0][0], cmap='gray')
             plt.show()
 
-    return dilated_filters, eroded_filters
+    return [dilated_filters, eroded_filters]

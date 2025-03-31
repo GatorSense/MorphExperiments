@@ -29,12 +29,12 @@ class _Hitmiss(Function):
         for i in range (out_channels):
             F_hit = (input-K_hit[i])*-1
             F_hit = F_hit.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)     # reshape tensor to be 5 dimension for max_pool3D function
-            F_hit = -1 * F.relu(-1 * F_hit).sum()
+            F_hit = (-1 * F.relu(F_hit)).sum()
             F_miss = input-K_miss[i]
             F_miss = F_miss.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)   # reshape tensor to be 5 dimension for max_pool3D function
             F_miss = F.relu(F_miss).sum()
             
-            F_map[:,i] = F_hit *-1 - F_miss
+            F_map[:,i] = F_hit - F_miss
         
         F_map = F_map.view(batch_size, out_Fmap, fh, fh)
         return  F_map
@@ -42,7 +42,13 @@ class _Hitmiss(Function):
 
 class MNN(nn.Module):
 
-    def __init__(self, in_channels, out_channels, kernel_size, dilated_filters=None, eroded_filters=None):
+    def __init__(self, in_channels, out_channels, kernel_size, filter_list=None):
+        ''' Initializes MNN layer.
+
+            Args: 
+            filter_list: list of filters to be initialized as.
+                         Accepts either [selected_three] or [dilated_filters, eroded_filters]. The order matters!!
+        '''
 
         super(MNN, self).__init__()
         self.in_channels = in_channels
@@ -51,9 +57,14 @@ class MNN(nn.Module):
         self.K_hit = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
         self.K_miss = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
         
-        if (dilated_filters and eroded_filters):
-            # self.set_hitmiss_filters_to_3(selected_3)
-            self.set_hitmiss_filters_to_morphed_3(dilated_filters, eroded_filters)
+        if (filter_list):
+            if (len(filter_list) == 1):
+                self.set_hitmiss_filters_to_3(filter_list[0])
+            elif (len(filter_list) == 2):
+                self.set_hitmiss_filters_to_morphed_3(filter_list[0], filter_list[1])
+            else:
+                print("***ATTENTION***\nThe filter given to MNN layer is in the wrong format!")
+                exit()
         else:
             self.reset_parameters()
 
