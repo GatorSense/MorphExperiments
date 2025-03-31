@@ -85,9 +85,6 @@ idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 
 train_subset_3 = Subset(train_dataset, idx_3)
 
-# black_images_train = torch.zeros(6000, 1, 28, 28)
-# black_images_train += 0.1 * torch.randn_like(black_images_train)
-
 test_dataset = datasets.KMNIST(
     root='./data', 
     train=False, 
@@ -156,7 +153,6 @@ class ConvNet(nn.Module):
         super(ConvNet,self).__init__()
         self.conv1 = nn.Conv2d(1, 20, kernel_size=28)
         self.set_conv_filters(selected_3)
-        # self.conv2 = nn.Conv2d(20, 10, kernel_size=5)
         self.training = True
         self.done = False
         os.makedirs('filters/', exist_ok=True)
@@ -173,20 +169,6 @@ class ConvNet(nn.Module):
             hit_filters_plot.savefig(os.path.join('filters', f"conv_epoch{epoch}.png"))
             experiment.log_figure(figure_name="filters_conv", figure=hit_filters_fig, step=epoch)
 
-            # fm_dir = 'feature_maps/conv'
-            # os.makedirs(fm_dir, exist_ok=True)
-            # for batch in range(output.shape[0]):
-            #     plt.imshow(x[batch][0].cpu().detach().numpy(), cmap='gray')
-            #     plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Original.png'))
-            #     plt.clf()
-            #     for channel in range(output.shape[1]):
-            #         plt.imshow(output[batch][channel].cpu().detach().numpy(), cmap='gray')
-            #         plt.savefig(os.path.join(fm_dir, f'Batch_{batch}_Channel_{channel}.png'))
-            #         plt.clf()
-            #     if batch == 100:
-            #         self.done = True
-            #         break
-        # output = self.conv2(output)
         return output
 
 class MNNModel(nn.Module):
@@ -197,10 +179,7 @@ class MNNModel(nn.Module):
         else:
             self.morph = MorphNet()
         self.fc1 = nn.Linear(10,2)
-        # self.fc3 = nn.Linear(1000,100)
-        # self.fc4 = nn.Linear(100,2)
         self.training = True
-        # self.log_filters = False
         self.activate = nn.LeakyReLU()
     
     def forward(self, x, epoch):
@@ -209,15 +188,10 @@ class MNNModel(nn.Module):
         output = m_output.cuda()
         output = output.view(output.size(0), -1)
         output = self.activate(self.fc1(output))
-        # output = self.fc2(output)
-        # output = F.dropout(output, p=0.5, training=self.training)
-        # output = self.fc3(output)
-        # output = self.fc4(output)
         return F.log_softmax(output,1), m_output
     
     # Turn on and off the logging
     def log_filters(self, bool):
-        # self.log_filters = bool # I don't think we need this property, but keep it here just in case
         self.morph.log_filters = bool
 
 class CNNModel(nn.Module):
@@ -225,9 +199,6 @@ class CNNModel(nn.Module):
         super(CNNModel,self).__init__()
         self.conv = ConvNet(selected_3)
         self.fc1 = nn.Linear(20,2)
-        # self.fc2 = nn.Linear(2000,200)
-        # self.fc3 = nn.Linear(200,100)
-        # self.fc4 = nn.Linear(100,2)
         self.training = True
     
     def forward(self, x, epoch):
@@ -236,10 +207,6 @@ class CNNModel(nn.Module):
         output = c_output
         output = output.view(output.size(0), -1)
         output = F.relu(self.fc1(output))
-        # output = self.fc2(output)
-        # output = F.dropout(output, p=0.5, training=self.training)
-        # output = self.fc3(output)
-        # output = self.fc4(output)
         return F.log_softmax(output,1)
     
 class MCNNModel(nn.Module):
@@ -282,15 +249,9 @@ kernel = torch.ones((2, 2))
 # Dilating/Eroding filter images
 dilated_filters, eroded_filters = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
 
-# Although we have 2 versions of filters, any of dilated/eroded filter should be enough
-# to indicate if an image is used as a filter -- double check!
-train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, dilated_filters),
-                        args.batch_size, shuffle=True, **kwargs)
-
+# Create custom train loader
 remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
-
 train_subset_3 = Subset(train_subset_3, remaining_indices)
-
 train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, selected_3),
                           args.batch_size, shuffle=True, **kwargs)
 
@@ -298,8 +259,10 @@ train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, se
 plot_morphed_filters_initial(eroded_filters, experiment, "hit")
 plot_morphed_filters_initial(dilated_filters, experiment, "miss")
 
+# Initialize model
 if args.model_type == 'morph':
     model = MNNModel(dilated_filters, eroded_filters)
+    model = MNNModel()
 elif args.model_type == 'conv':
     rand_index = (np.random.rand(20) * len(train_subset_3)).astype(int)
     selected_3 = Subset(train_subset_3, rand_index)
@@ -325,10 +288,9 @@ def train(epoch):
             
         # data, target = Variable(data.cuda()), Variable(target)
         data, target = Variable(data), Variable(target)
-
         labels = target.cpu().detach().numpy()
-
         real_target = target
+        
         real_target = torch.where(real_target == 2, torch.tensor(1, dtype=real_target.dtype), real_target)
         optimizer.zero_grad()
 
@@ -340,15 +302,18 @@ def train(epoch):
         else:
             output, fm_val = model(data, epoch)
 
+        # Compute loss and set model parameters
         loss = F.nll_loss(output.cuda(), real_target)
         loss.backward()
         optimizer.step()
 
+        # Computes and prints loss metrics
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
         
+        # Stores values for all three labels to plot 
         indices_0 = (labels == 0).nonzero()[0]
         indices_1 = (labels == 1).nonzero()[0]
         indices_2 = (labels == 2).nonzero()[0]
@@ -364,6 +329,7 @@ def train(epoch):
     print('==== Training Time ====', str(stop_train-start_train))
 
 def test(epoch):
+    # Initialize variables
     target_total = np.array([], dtype=int)
     output_total = np.array([], dtype=int)
     model.eval()
@@ -371,7 +337,6 @@ def test(epoch):
     test_loss = 0
     correct = 0
     model.training = False
-
     heatmap_data = np.zeros((10, 2))
     model.eval()
  
@@ -398,18 +363,18 @@ def test(epoch):
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-            # store predicted labels in the dict
             # Get feature maps for original targets < 3 and > 3
             original_target_tensor = torch.tensor(original_target).to(fms.device)
-
             indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
             indices_4_9 = (original_target_tensor > 3).nonzero(as_tuple=True)[0]
 
+            # Store feature map values in list
             if indices_0_2.numel() > 0:
                 fms_0_2.append(fms[indices_0_2].cpu().detach().numpy())
             if indices_4_9.numel() > 0:
                 fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
 
+            # Store predicted value for each MNIST class
             pred_np = pred.cpu().detach().numpy().flatten()
             for i in range(len(original_target)):
                 digit = original_target[i]
@@ -430,13 +395,15 @@ def test(epoch):
         # Now plot the histograms using accumulated feature maps
         fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
         plot_fm_histogram_test(fm_hists, experiment, epoch)
-
         plot_heatmap(heatmap_data, experiment, epoch)
 
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))
+
+    # Number of correct test outputs
     return correct
 
+# Training loop
 accuracy = torch.zeros(args.epochs+1)
 for epoch in range(1,args.epochs+1):
     train(epoch)
@@ -444,7 +411,6 @@ for epoch in range(1,args.epochs+1):
     experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
     weights = log_weights(model)
     experiment.log_metrics(weights)
-
 
 accuracy /= 100
 print(accuracy.max(0))

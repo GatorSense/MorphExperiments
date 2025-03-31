@@ -17,7 +17,7 @@ import torch.nn.functional as F
 class _Hitmiss(Function):
     
     def forward(self, input, K_hit, K_miss, kernel_size, out_channels):
-        #import pdb; pdb.set_trace()
+
         batch_size, in_channels, ih, iw = input.size() #dimensions of input image
         fh = ih - kernel_size + 1 #size of feature map
         out_Fmap = in_channels*out_channels
@@ -65,8 +65,6 @@ class MNN(nn.Module):
         self.K_miss.data.uniform_(-stdv, stdv)
 
     def set_hit_filters(self, selected_3):
-        # with torch.no_grad:
-        # print(self.K_hit.shape)
         new_K_hit = self.K_hit.clone()
         for i in range(10):
             image = selected_3[i][0][0]
@@ -83,20 +81,6 @@ class MNN(nn.Module):
     def set_hitmiss_filters_to_3(self, selected_3):
         self.set_hit_filters(selected_3)
         self.set_miss_filters(selected_3)
-
-    # def set_hit_filters_morphed(self, eroded_filters):
-    #     new_K_hit = self.K_hit.clone()
-    #     for i in range(10):
-    #         image = eroded_filters[i][0][0]
-    #         new_K_hit[i][0] = image
-    #     self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
-    
-    # def set_miss_filters_morphed(self, dilated_filters):
-    #     new_K_miss = self.K_miss.clone()
-    #     for i in range(10):
-    #         image = dilated_filters[i][0][0]
-    #         new_K_miss[i][0] = image
-    #     self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
 
     def set_hitmiss_filters_to_morphed_3(self, dilated_filters, eroded_filters):
         self.set_hit_filters(eroded_filters)
