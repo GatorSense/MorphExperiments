@@ -181,7 +181,7 @@ class MNNModel(nn.Module):
             self.morph = MorphNet(filter_list)
         else:
             self.morph = MorphNet()
-        self.fc1 = nn.Linear(10,2)
+        self.fc1 = nn.Linear(10,1)
         self.training = True
         self.activate = nn.LeakyReLU()
     
@@ -190,8 +190,9 @@ class MNNModel(nn.Module):
         m_output = self.morph(x.cuda(), epoch)
         output = m_output.cuda()
         output = output.view(output.size(0), -1)
-        output = self.activate(self.fc1(output))
-        return F.log_softmax(output,1), m_output
+        # output = self.activate(self.fc1(output))
+        # return F.log_softmax(output,1), m_output
+        return self.fc1(output), m_output
     
     # Turn on and off the logging
     def log_filters(self, bool):
@@ -270,7 +271,8 @@ plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
 
 # Initialize model
 if args.model_type == 'morph':
-    model = MNNModel(filter_list)
+    model = MNNModel()
+    # model = MNNModel(filter_list)
 elif args.model_type == 'conv':
     model = CNNModel(selected_3)
 else:
@@ -280,6 +282,7 @@ if args.cuda:
     model.cuda()
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+criterion = nn.BCEWithLogitsLoss()
 dtype = torch.FloatTensor
 
 def train(epoch):
@@ -309,7 +312,8 @@ def train(epoch):
             output, fm_val = model(data, epoch)
 
         # Compute loss and set model parameters
-        loss = F.nll_loss(output.cuda(), real_target)
+        real_target = real_target.reshape(-1, 1).float()
+        loss = criterion(output.cuda(), real_target)
         loss.backward()
         optimizer.step()
 
@@ -342,52 +346,61 @@ def test(epoch):
     start_test = time()
     test_loss = 0
     correct = 0
-    model.training = False
-    heatmap_data = np.zeros((10, 2))
-    model.eval()
- 
+    heatmap_data = np.zeros((10, 2))  # For heatmap plotting (if needed)
+    
     # Initialize lists to collect feature maps
     fms_0_2 = []
     fms_4_9 = []
+    
+    device = next(model.parameters()).device  # get model's device
+    
     with torch.no_grad():
         for data, target in test_loader:
-            if args.cuda:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data.cuda()), Variable(target)
-
-            original_target = target.cpu().detach().numpy()
-
+            data, target = data.to(device), target.to(device)
+            # Save the original target for heatmap purposes
+            original_target = target.cpu().numpy()
+            
+            # Convert target: if equal to 3 then label 1, else 0
             target = torch.where(target == 3, 
-                                torch.tensor(1, device=target.device), 
-                                torch.tensor(0, device=target.device))
-
-            # Accumulate metrics  
-            output, fms = model(data, epoch)
-            target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
-            output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()
-            pred = output.data.max(1, keepdim=True)[1]
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-
-            # Get feature maps for original targets < 3 and > 3
-            original_target_tensor = torch.tensor(original_target).to(fms.device)
+                                 torch.tensor(1, device=device), 
+                                 torch.tensor(0, device=device))
+            
+            # Forward pass through model
+            output, fms = model(data, epoch)  # output shape: [batch_size, 1]
+            
+            # For loss computation: reshape target to [batch_size, 1] and convert to float
+            loss = criterion(output, target.view(-1, 1).float())
+            test_loss += loss.item()
+            
+            # Convert output logits to probabilities, then to predictions using a threshold of 0.5
+            probs = torch.sigmoid(output)
+            pred = (probs > 0.5).long()
+            
+            # Accumulate targets and predictions for confusion matrix
+            target_total = np.concatenate([target_total, target.cpu().numpy()], axis=None)
+            output_total = np.concatenate([output_total, pred.cpu().numpy().flatten()], axis=None)
+            
+            correct += pred.eq(target.view_as(pred)).sum().item()
+            
+            # Get feature maps for original targets < 3 and > 3 (for plotting)
+            original_target_tensor = torch.tensor(original_target).to(device)
             indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
             indices_4_9 = (original_target_tensor > 3).nonzero(as_tuple=True)[0]
-
-            # Store feature map values in list
+            
             if indices_0_2.numel() > 0:
-                fms_0_2.append(fms[indices_0_2].cpu().detach().numpy())
+                fms_0_2.append(fms[indices_0_2.cpu()].cpu().numpy())
             if indices_4_9.numel() > 0:
-                fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
-
-            # Store predicted value for each MNIST class
-            pred_np = pred.cpu().detach().numpy().flatten()
-            for i in range(len(original_target)):
-                digit = original_target[i]
+                fms_4_9.append(fms[indices_4_9.cpu()].cpu().numpy())
+            
+            # Update heatmap_data based on original target digits
+            pred_np = pred.cpu().numpy().flatten()
+            for i, digit in enumerate(original_target):
+                # digit should be in 0-9 range
                 heatmap_data[digit][pred_np[i]] += 1
-
+        
+        # Average loss over the dataset
         test_loss /= len(test_loader.dataset)
-
+        
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
@@ -397,16 +410,15 @@ def test(epoch):
             y_predicted=output_total,
             labels=["Not Three", "Three"],
         )
-
-        # Now plot the histograms using accumulated feature maps
+        
+        # Plot the histograms using accumulated feature maps
         fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
         plot_fm_histogram_test(fm_hists, experiment, epoch)
         plot_heatmap(heatmap_data, experiment, epoch)
-
+        
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))
-
-    # Number of correct test outputs
+    
     return correct
 
 # Training loop
