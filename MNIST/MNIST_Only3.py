@@ -296,6 +296,8 @@ def train(epoch):
         data, target = Variable(data), Variable(target)
         labels = target.cpu().detach().numpy()
         real_target = target
+        # plt.imshow(data[0][0].detach().cpu(), cmap='gray')
+        # plt.show()
         
         real_target = torch.where(real_target == 2, torch.tensor(1, dtype=real_target.dtype), real_target)
         optimizer.zero_grad()
