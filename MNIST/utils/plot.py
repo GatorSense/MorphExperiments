@@ -148,7 +148,7 @@ def fm_histograms(fm_dict):
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.hist(fm_dict[key], bins=5, alpha=0.75)
         if key == "0":
-            ax.set_title(f"Feature Map Values for Black Images")
+            ax.set_title(f"Feature Map Values for KMNIST Images")
         if key == "1":
             ax.set_title(f"Feature Map Values for Three Images")
         if key == "2":
@@ -166,7 +166,7 @@ def plot_fm_histogram(fm_dict, experiment, epoch):
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
 
     hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'Black Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'KMNIST Images', figure=hists["0"], step=epoch)
     experiment.log_figure(figure_name=f'Three Images', figure=hists["1"], step=epoch)
     experiment.log_figure(figure_name=f'Threes in Filters', figure=hists["2"], step=epoch)
 
