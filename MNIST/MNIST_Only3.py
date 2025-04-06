@@ -95,7 +95,7 @@ train_subset_3 = Subset(train_dataset, idx_3)
 
 norm = transforms.Normalize((0.1307,), (0.3081,))
 black_images_train = torch.zeros(6000, 1, 28, 28)
-black_images_train += 0.01 * abs(torch.randn_like(black_images_train))
+black_images_train += 0.001 * abs(torch.randn_like(black_images_train))
 # black_images_train = norm(black_images_train)
 # black_images_train = torch.stack([img for img, _ in kmnist_dataset])
 
@@ -105,8 +105,6 @@ test_loader = torch.utils.data.DataLoader(
                     #    transforms.Normalize((0.1307,), (0.3081,))
                    ])),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
-
-feature_map_list = []
 
 class MorphNet(nn.Module):
     def __init__(self, filter_list=None):
@@ -262,8 +260,8 @@ train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, se
 
 # Comment out either of the blocks!
 # Use original images (No dilation/erosion)
-# filter_list = [selected_3]
-# plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
+filter_list = [selected_3]
+plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
 
 # Dilating/Eroding filter images
 # filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
@@ -299,12 +297,9 @@ def train(epoch):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
             
-        # data, target = Variable(data.cuda()), Variable(target)
         data, target = Variable(data), Variable(target)
         labels = target.cpu().detach().numpy()
         real_target = target
-        # plt.imshow(data[0][0].detach().cpu(), cmap='gray')
-        # plt.show()
         
         real_target = torch.where(real_target == 2, torch.tensor(1, dtype=real_target.dtype), real_target)
         optimizer.zero_grad()
@@ -333,23 +328,23 @@ def train(epoch):
         indices_1 = (labels == 1).nonzero()[0]
         indices_2 = (labels == 2).nonzero()[0]
         fm_val = fm_val.detach().cpu().numpy()
-        hit = hit.detach().cpu().numpy()
-        miss = miss.detach().cpu().numpy()
+        # hit = hit.detach().cpu().numpy()
+        # miss = miss.detach().cpu().numpy()
 
         # print(data[indices_0].cpu())
         # print(data[indices_1].cpu())
 
-        fm_dict["0"].append(fm_val[indices_0].flatten())
-        fm_dict["1"].append(fm_val[indices_1].flatten())
-        fm_dict["2"].append(fm_val[indices_2].flatten())
+        fm_dict["0"].append(fm_val[indices_0])
+        fm_dict["1"].append(fm_val[indices_1])
+        fm_dict["2"].append(fm_val[indices_2])
 
-        hit_dict["0"].append(hit[indices_0].flatten())
-        hit_dict["1"].append(hit[indices_1].flatten())
-        hit_dict["2"].append(hit[indices_2].flatten())
+        hit_dict["0"].append(hit[indices_0])
+        hit_dict["1"].append(hit[indices_1])
+        hit_dict["2"].append(hit[indices_2])
 
-        miss_dict["0"].append(miss[indices_0].flatten())
-        miss_dict["1"].append(miss[indices_1].flatten())
-        miss_dict["2"].append(miss[indices_2].flatten())
+        miss_dict["0"].append(miss[indices_0])
+        miss_dict["1"].append(miss[indices_1])
+        miss_dict["2"].append(miss[indices_2])
 
     plot_fm_histogram(fm_dict, experiment, epoch)
     plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
