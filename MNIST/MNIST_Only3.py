@@ -93,9 +93,9 @@ kmnist_dataset = datasets.KMNIST(
     transform=transform
 )
 
-# black_images_train = torch.zeros(6000, 1, 28, 28)
-# black_images_train += 0.1 * torch.randn_like(black_images_train)
-black_images_train = torch.stack([img for img, _ in kmnist_dataset])
+black_images_train = torch.zeros(6000, 1, 28, 28)
+black_images_train += 0.01 * abs(torch.randn_like(black_images_train))
+# black_images_train = torch.stack([img for img, _ in kmnist_dataset])
 
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transforms.Compose([
@@ -260,17 +260,18 @@ train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, se
 
 # Comment out either of the blocks!
 # Use original images (No dilation/erosion)
-filter_list = [selected_3]
-plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
+# filter_list = [selected_3]
+# plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
 
 # Dilating/Eroding filter images
-filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
-plot_morphed_filters_initial(filter_list[0], experiment, "miss") # dilation
-plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
+# filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
+# plot_morphed_filters_initial(filter_list[0], experiment, "miss") # dilation
+# plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
 
 # Initialize model
 if args.model_type == 'morph':
-    model = MNNModel(filter_list)
+    # model = MNNModel(filter_list)
+    model = MNNModel()
 elif args.model_type == 'conv':
     model = CNNModel(selected_3)
 else:
