@@ -141,14 +141,47 @@ def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
     plt.clf()
     plt.close()
 
+def hit_miss_histograms(morph_dict, mode):
+    figs = {}
+
+    assert (mode == "Hit" or mode == "Miss")
+    
+    for key in ["0", "1", "2"]:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.hist(morph_dict[key], bins=50, alpha=0.75)
+        if key == "0":
+            ax.set_title(f"{mode} Values for Black Images")
+        if key == "1":
+            ax.set_title(f"{mode} Values for Three Images")
+        if key == "2":
+            ax.set_title(f"{mode} Values for Threes in Filters")
+        ax.set_xlabel("Value")
+        ax.set_ylabel("Frequency")
+        ax.set_xlim(morph_dict[key].min(), morph_dict[key].max())
+        figs[key] = fig
+    
+    return figs
+
+def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
+    assert (mode == "Hit" or mode == "Miss")
+
+    fm_dict_np = {}          
+    for key in morph_dict.keys():
+        fm_dict_np[key] = np.concatenate(morph_dict[key]).flatten()
+
+    hists = fm_histograms(fm_dict_np)
+    experiment.log_figure(figure_name=f'{mode} Black Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'{mode} Three Images', figure=hists["1"], step=epoch)
+    experiment.log_figure(figure_name=f'{mode} Threes in Filters', figure=hists["2"], step=epoch)
+
 def fm_histograms(fm_dict):
     figs = {}
     
     for key in ["0", "1", "2"]:
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.hist(fm_dict[key], bins=5, alpha=0.75)
+        ax.hist(fm_dict[key], bins=50, alpha=0.75)
         if key == "0":
-            ax.set_title(f"Feature Map Values for KMNIST Images")
+            ax.set_title(f"Feature Map Values for Black Images")
         if key == "1":
             ax.set_title(f"Feature Map Values for Three Images")
         if key == "2":
@@ -166,7 +199,7 @@ def plot_fm_histogram(fm_dict, experiment, epoch):
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
 
     hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'KMNIST Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'Black Images', figure=hists["0"], step=epoch)
     experiment.log_figure(figure_name=f'Three Images', figure=hists["1"], step=epoch)
     experiment.log_figure(figure_name=f'Threes in Filters', figure=hists["2"], step=epoch)
 
@@ -175,7 +208,7 @@ def fm_histograms_test(fm_dict):
     
     for key in ["0-2", "4-9"]:
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.hist(fm_dict[key], bins=5, alpha=0.75)
+        ax.hist(fm_dict[key], bins=50, alpha=0.75)
         if key == "0-2":
             ax.set_title(f"Feature Map Values for 0-2 Images")
         if key == "4-9":

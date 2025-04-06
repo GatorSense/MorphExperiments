@@ -70,7 +70,7 @@ kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 transform=transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
+        # transforms.Normalize((0.1307,), (0.3081,))
     ])
 
 train_dataset = datasets.MNIST(
@@ -86,21 +86,23 @@ idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 train_subset_3 = Subset(train_dataset, idx_3)
 
 # Load KMNIST data
-kmnist_dataset = datasets.KMNIST(
-    root='./data', 
-    train=False, 
-    download=True, 
-    transform=transform
-)
+# kmnist_dataset = datasets.KMNIST(
+#     root='./data', 
+#     train=False, 
+#     download=True, 
+#     transform=transform
+# )
 
+norm = transforms.Normalize((0.1307,), (0.3081,))
 black_images_train = torch.zeros(6000, 1, 28, 28)
 black_images_train += 0.01 * abs(torch.randn_like(black_images_train))
+# black_images_train = norm(black_images_train)
 # black_images_train = torch.stack([img for img, _ in kmnist_dataset])
 
 test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transforms.Compose([
                        transforms.ToTensor(),
-                       transforms.Normalize((0.1307,), (0.3081,))
+                    #    transforms.Normalize((0.1307,), (0.3081,))
                    ])),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
@@ -122,14 +124,14 @@ class MorphNet(nn.Module):
     def forward(self, x, epoch):
         output = x
         # output = F.max_pool2d(x,2)
-        output = self.MNN1(output)
+        output, hit, miss = self.MNN1(output)
 
         # Plot filters
         if not self.done and self.log_filters:
             plot_filters_forward(self.MNN1.K_hit, experiment, epoch, "hit")
             plot_filters_forward(self.MNN1.K_miss, experiment, epoch, "miss")
 
-        return output
+        return output, hit, miss
 
 class ConvNet(nn.Module):
     def set_conv_filters(self, selected_3):
@@ -187,11 +189,11 @@ class MNNModel(nn.Module):
     
     def forward(self, x, epoch):
         self.morph.training = self.training
-        m_output = self.morph(x.cuda(), epoch)
+        m_output, hit, miss = self.morph(x.cuda(), epoch)
         output = m_output.cuda()
         output = output.view(output.size(0), -1)
         output = self.activate(self.fc1(output))
-        return F.log_softmax(output,1), m_output
+        return F.log_softmax(output,1), m_output, hit, miss
     
     # Turn on and off the logging
     def log_filters(self, bool):
@@ -270,8 +272,8 @@ train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, se
 
 # Initialize model
 if args.model_type == 'morph':
-    # model = MNNModel(filter_list)
-    model = MNNModel()
+    model = MNNModel(filter_list)
+    # model = MNNModel()
 elif args.model_type == 'conv':
     model = CNNModel(selected_3)
 else:
@@ -285,9 +287,13 @@ dtype = torch.FloatTensor
 
 def train(epoch):
     fm_dict = {"0": [], "1": [], "2": []}
+    hit_dict = {"0": [], "1": [], "2": []}
+    miss_dict = {"0": [], "1": [], "2": []}
     model.train()
     model.training = True
     start_train = time()
+    if epoch == 25:
+        print('here!')
     for batch_idx, (data, target) in enumerate(train_loader):
 
         if args.cuda:
@@ -306,10 +312,10 @@ def train(epoch):
         # Only log filters for the first batch
         if (batch_idx == 0):
             model.log_filters(True)
-            output, fm_val = model(data, epoch)
+            output, fm_val, hit, miss = model(data, epoch)
             model.log_filters(False)
         else:
-            output, fm_val = model(data, epoch)
+            output, fm_val, hit, miss = model(data, epoch)
 
         # Compute loss and set model parameters
         loss = F.nll_loss(output.cuda(), real_target)
@@ -327,12 +333,27 @@ def train(epoch):
         indices_1 = (labels == 1).nonzero()[0]
         indices_2 = (labels == 2).nonzero()[0]
         fm_val = fm_val.detach().cpu().numpy()
+        hit = hit.detach().cpu().numpy()
+        miss = miss.detach().cpu().numpy()
+
+        # print(data[indices_0].cpu())
+        # print(data[indices_1].cpu())
 
         fm_dict["0"].append(fm_val[indices_0].flatten())
         fm_dict["1"].append(fm_val[indices_1].flatten())
         fm_dict["2"].append(fm_val[indices_2].flatten())
 
+        hit_dict["0"].append(hit[indices_0].flatten())
+        hit_dict["1"].append(hit[indices_1].flatten())
+        hit_dict["2"].append(hit[indices_2].flatten())
+
+        miss_dict["0"].append(miss[indices_0].flatten())
+        miss_dict["1"].append(miss[indices_1].flatten())
+        miss_dict["2"].append(miss[indices_2].flatten())
+
     plot_fm_histogram(fm_dict, experiment, epoch)
+    plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
+    plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
@@ -365,7 +386,7 @@ def test(epoch):
                                 torch.tensor(0, device=target.device))
 
             # Accumulate metrics  
-            output, fms = model(data, epoch)
+            output, fms, hit, miss = model(data, epoch)
             target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
             output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
             test_loss += F.nll_loss(output, target, reduction='sum').item()
