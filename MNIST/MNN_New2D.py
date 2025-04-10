@@ -13,6 +13,8 @@ from torch.autograd import Variable
 from torch.autograd import Function
 from torch.nn import Parameter
 import torch.nn.functional as F
+# import matplotlib.pyplot as plt
+import numpy as np
 
 class _Hitmiss(Function):
     
@@ -26,18 +28,44 @@ class _Hitmiss(Function):
 
         F_map = Variable(torch.zeros(batch_size, out_channels, num_blocks, 1, 1))  
         input = input.cuda()
+        # F_hit_list = []
+        # F_miss_list = []
+        F_hit_list = Variable(torch.zeros(batch_size, out_channels, num_blocks, 1, 1))
+        F_miss_list = Variable(torch.zeros(batch_size, out_channels, num_blocks, 1, 1))
         for i in range (out_channels):
             F_hit = (input - K_hit[i]) * -1
+            F_miss = input - K_miss[i]
+            # if i == 0:
+            #     plt.imshow(input[0][0].detach().cpu().squeeze(), cmap='gray', vmin=0, vmax=1)
+            #     plt.colorbar(label='Pixel Value')  # Add colorbar with label
+            #     plt.title("Input Image")
+            #     plt.show()
+            #     plt.imshow(F_hit[0][0].detach().cpu().squeeze(), cmap='gray', vmin=-1, vmax=0)
+            #     plt.colorbar(label='Pixel Value')  # Add colorbar with label
+            #     plt.title("F_hit Image")
+            #     plt.show()
+            #     plt.imshow(F_miss[0][0].detach().cpu().squeeze(), cmap='gray', vmin=0, vmax=1)
+            #     plt.colorbar(label='Pixel Value')  # Add colorbar with label
+            #     plt.title("F_miss Image")
+            #     plt.show()
             F_hit = F_hit.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)     # reshape tensor to be 5 dimension for max_pool3D function
             F_hit = (-1 * F.relu(F_hit)).sum()
-            F_miss = input - K_miss[i]
             F_miss = F_miss.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)   # reshape tensor to be 5 dimension for max_pool3D function
             F_miss = F.relu(F_miss).sum()
-            
             F_map[:,i] = F_hit - F_miss
+            # F_hit_list.append(F_hit.item())
+            # F_miss_list.append(F_miss.item())
+            F_hit_list[:, i] = F_hit.item()
+            F_miss_list[:, i] = F_miss.item()
         
         F_map = F_map.view(batch_size, out_Fmap, fh, fh)
-        return  F_map
+        # hit_tensor = torch.Tensor(F_hit_list)
+        # miss_tensor = torch.Tensor(F_miss_list)
+        # print('in HM forward')
+        # print(f'fm: {F_map.shape}', f'hit: {hit_tensor.shape}', f'miss: {miss_tensor.shape}')
+        F_hit_list = F_hit_list.view(batch_size, out_Fmap, fh, fh)
+        F_miss_list = F_miss_list.view(batch_size, out_Fmap, fh, fh)
+        return F_map, F_hit_list, F_miss_list #hit_tensor, miss_tensor
 
 class MNN(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, filter_list=None):
