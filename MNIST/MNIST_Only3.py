@@ -242,6 +242,7 @@ experiment = start(
   workspace="joannekim"
 )
 
+##### TODO: Create function in utils/custom_dataset.py that returns filter_list based on arg parser ####
 # Select random indices for threes
 rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
 
@@ -267,6 +268,7 @@ plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
 # filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
 # plot_morphed_filters_initial(filter_list[0], experiment, "miss") # dilation
 # plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
+
 
 # Initialize model
 if args.model_type == 'morph':
