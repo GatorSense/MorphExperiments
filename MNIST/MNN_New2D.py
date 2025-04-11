@@ -9,63 +9,56 @@ Created on Mon Feb 19 15:58:05 2018
 import math
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.autograd import Function
 from torch.nn import Parameter
 import torch.nn.functional as F
-# import matplotlib.pyplot as plt
-import numpy as np
 
 class _Hitmiss(Function):
-    
     def forward(self, input, K_hit, K_miss, kernel_size, out_channels):
+        batch_size, in_channels, ih, iw = input.size()  
+        fh = ih - kernel_size + 1
+        out_Fmap = in_channels * out_channels
+        num_blocks = fh * fh * in_channels
 
-        batch_size, in_channels, ih, iw = input.size() #dimensions of input image
-        fh = ih - kernel_size + 1 #size of feature map
-        out_Fmap = in_channels*out_channels
-        num_blocks = fh * fh *in_channels
-        input = input.unfold(2, kernel_size, 1).unfold(3, kernel_size, 1).permute(0,2,3,1,4,5) # break whole image to blocks
+        # Unfold => (B, fh, fh, in_channels, k, k)
+        input = input.unfold(2, kernel_size, 1) \
+                     .unfold(3, kernel_size, 1) \
+                     .permute(0, 2, 3, 1, 4, 5)
 
-        F_map = Variable(torch.zeros(batch_size, out_channels, num_blocks, 1, 1))  
-        input = input.cuda()
-        # F_hit_list = []
-        # F_miss_list = []
-        F_hit_list = Variable(torch.zeros(batch_size, out_channels, num_blocks, 1, 1))
-        F_miss_list = Variable(torch.zeros(batch_size, out_channels, num_blocks, 1, 1))
-        for i in range (out_channels):
-            F_hit = (input - K_hit[i]) * -1
-            F_miss = input - K_miss[i]
-            # if i == 0:
-            #     plt.imshow(input[0][0].detach().cpu().squeeze(), cmap='gray', vmin=0, vmax=1)
-            #     plt.colorbar(label='Pixel Value')  # Add colorbar with label
-            #     plt.title("Input Image")
-            #     plt.show()
-            #     plt.imshow(F_hit[0][0].detach().cpu().squeeze(), cmap='gray', vmin=-1, vmax=0)
-            #     plt.colorbar(label='Pixel Value')  # Add colorbar with label
-            #     plt.title("F_hit Image")
-            #     plt.show()
-            #     plt.imshow(F_miss[0][0].detach().cpu().squeeze(), cmap='gray', vmin=0, vmax=1)
-            #     plt.colorbar(label='Pixel Value')  # Add colorbar with label
-            #     plt.title("F_miss Image")
-            #     plt.show()
-            F_hit = F_hit.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)     # reshape tensor to be 5 dimension for max_pool3D function
-            F_hit = (-1 * F.relu(F_hit)).sum()
-            F_miss = F_miss.contiguous().view(batch_size, num_blocks, kernel_size, kernel_size)   # reshape tensor to be 5 dimension for max_pool3D function
-            F_miss = F.relu(F_miss).sum()
-            F_map[:,i] = F_hit - F_miss
-            # F_hit_list.append(F_hit.item())
-            # F_miss_list.append(F_miss.item())
-            F_hit_list[:, i] = F_hit.item()
-            F_miss_list[:, i] = F_miss.item()
-        
-        F_map = F_map.view(batch_size, out_Fmap, fh, fh)
-        # hit_tensor = torch.Tensor(F_hit_list)
-        # miss_tensor = torch.Tensor(F_miss_list)
-        # print('in HM forward')
-        # print(f'fm: {F_map.shape}', f'hit: {hit_tensor.shape}', f'miss: {miss_tensor.shape}')
-        F_hit_list = F_hit_list.view(batch_size, out_Fmap, fh, fh)
-        F_miss_list = F_miss_list.view(batch_size, out_Fmap, fh, fh)
-        return F_map, F_hit_list, F_miss_list #hit_tensor, miss_tensor
+        device = input.device
+        input = input.to(device)
+
+        # K_hit, K_miss => (out_channels, in_channels, k, k)
+        # Insert batch & (fh, fh) dims so they broadcast properly:
+        input_  = input.unsqueeze(1)
+        K_hit_  = K_hit.unsqueeze(0).unsqueeze(2).unsqueeze(3)  # => (1, out_channels, 1, 1, in_channels, k, k)
+        K_miss_ = K_miss.unsqueeze(0).unsqueeze(2).unsqueeze(3) # same shape
+
+        # F_hit: shape (B, out_channels, fh, fh, in_channels, k, k)
+        F_hit  = -1.0 * F.relu( (input_ - K_hit_) * -1 )
+        # Sum over all of (fh, fh, in_channels, k, k) => (2,3,4,5,6)
+        F_hit_sum = F_hit.sum(dim=(2, 3, 4, 5, 6))
+
+        F_miss = F.relu(input_ - K_miss_)
+        F_miss_sum = F_miss.sum(dim=(2, 3, 4, 5, 6))
+
+        F_map_val = F_hit_sum - F_miss_sum  # => (B, out_channels)
+
+        # Expand to match your original shape
+        F_map_val_expanded = F_map_val.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # (B, out_channels, 1, 1, 1)
+        F_map_val_expanded = F_map_val_expanded.expand(batch_size, out_channels,
+                                                       num_blocks, 1, 1)
+        # Similarly for F_hit_list, F_miss_list:
+        F_hit_list_val = F_hit_sum.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(batch_size, out_channels,
+                                                                                    num_blocks, 1, 1)
+        F_miss_list_val = F_miss_sum.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(batch_size, out_channels,
+                                                                                      num_blocks, 1, 1)
+        # Finally reshape to (B, out_Fmap, fh, fh)
+        F_map       = F_map_val_expanded.view(batch_size, out_Fmap, fh, fh)
+        F_hit_list  = F_hit_list_val.view(batch_size, out_Fmap, fh, fh)
+        F_miss_list = F_miss_list_val.view(batch_size, out_Fmap, fh, fh)
+
+        return F_map, F_hit_list, F_miss_list
 
 class MNN(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, filter_list=None):

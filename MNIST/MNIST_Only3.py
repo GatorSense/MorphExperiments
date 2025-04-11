@@ -27,7 +27,7 @@ import pandas as pd
 from collections import defaultdict
 from utils.plot import *
 from utils.logger import log_weights
-from utils.custom_dataset import BlackAndThrees, FilterOutThrees, generate_hitmiss_morphed_filters
+from utils.custom_dataset import ThreesAndKMNIST, generate_hitmiss_morphed_filters
 from pprint import pprint
 from torch.nn import Parameter
 from dotenv import load_dotenv
@@ -40,11 +40,11 @@ start_whole = time()
 parser = argparse.ArgumentParser(description='PyTorch MNIST with MNNV2')
 parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 64)')
-parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+parser.add_argument('--test-batch-size', type=int, default=100, metavar='N',
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                     help='SGD momentum (default: 0.5)')
@@ -70,7 +70,7 @@ kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 transform=transforms.Compose([
         transforms.ToTensor(),
-        # transforms.Normalize((0.1307,), (0.3081,))
+        transforms.Normalize((0.5,), (0.5,))
     ])
 
 train_dataset = datasets.MNIST(
@@ -82,28 +82,22 @@ train_dataset = datasets.MNIST(
 
 targets = train_dataset.targets
 idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
-
 train_subset_3 = Subset(train_dataset, idx_3)
 
 # Load KMNIST data
-# kmnist_dataset = datasets.KMNIST(
-#     root='./data', 
-#     train=False, 
-#     download=True, 
-#     transform=transform
-# )
+kmnist_dataset = datasets.KMNIST(
+    root='./data', 
+    train=False, 
+    download=True, 
+    transform=transform
+)
 
-norm = transforms.Normalize((0.1307,), (0.3081,))
-black_images_train = torch.zeros(6000, 1, 28, 28)
-black_images_train += 0.001 * abs(torch.randn_like(black_images_train))
-# black_images_train = norm(black_images_train)
-# black_images_train = torch.stack([img for img, _ in kmnist_dataset])
+kmnist_train = torch.stack([img for img, _ in kmnist_dataset])
+idx_k = np.random.randint(0, len(kmnist_train), len(train_subset_3))
+kmnist_train = kmnist_train[idx_k]
 
 test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, transform=transforms.Compose([
-                       transforms.ToTensor(),
-                    #    transforms.Normalize((0.1307,), (0.3081,))
-                   ])),
+    datasets.MNIST('../data', train=False, transform=transform),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
 class MorphNet(nn.Module):
@@ -113,7 +107,6 @@ class MorphNet(nn.Module):
             self.MNN1 = MNN(1,10,28, filter_list)
         else:
             self.MNN1 = MNN(1,10,28)
-        # self.MNN2 = MNN(10,5,5)
         self.training = True
         self.passes = 0
         self.done = False
@@ -121,7 +114,6 @@ class MorphNet(nn.Module):
     
     def forward(self, x, epoch):
         output = x
-        # output = F.max_pool2d(x,2)
         output, hit, miss = self.MNN1(output)
 
         # Plot filters
@@ -242,40 +234,16 @@ experiment = start(
   workspace="joannekim"
 )
 
-##### TODO: Create function in utils/custom_dataset.py that returns filter_list based on arg parser ####
-# Select random indices for threes
-rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
-
-# Create subset of selected threes
-selected_3 = Subset(train_subset_3, rand_index)
-kernel = torch.ones((2, 2))
-
-# Dilating/Eroding filter images
-dilated_filters, eroded_filters = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
-
 # Create custom train loader
-remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
-train_subset_3 = Subset(train_subset_3, remaining_indices)
-train_loader = DataLoader(FilterOutThrees(black_images_train, train_subset_3, selected_3),
+train_loader = DataLoader(ThreesAndKMNIST(kmnist_train, train_subset_3),
                           args.batch_size, shuffle=True, **kwargs)
-
-# Comment out either of the blocks!
-# Use original images (No dilation/erosion)
-filter_list = [selected_3]
-plot_filters_initial(filter_list[0], experiment, filter_name="hit_and_miss")
-
-# Dilating/Eroding filter images
-# filter_list = generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel)
-# plot_morphed_filters_initial(filter_list[0], experiment, "miss") # dilation
-# plot_morphed_filters_initial(filter_list[1], experiment, "hit") # erosion
-
 
 # Initialize model
 if args.model_type == 'morph':
-    model = MNNModel(filter_list)
-    # model = MNNModel()
+    # model = MNNModel(filter_list)
+    model = MNNModel()
 elif args.model_type == 'conv':
-    model = CNNModel(selected_3)
+    model = CNNModel()
 else:
     model = MCNNModel()
 
@@ -286,14 +254,16 @@ optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
 
 def train(epoch):
-    fm_dict = {"0": [], "1": [], "2": []}
-    hit_dict = {"0": [], "1": [], "2": []}
-    miss_dict = {"0": [], "1": [], "2": []}
+    target_total = np.array([], dtype=int)
+    output_total = np.array([], dtype=int)
+    fm_dict = {"0": [], "1": []}
+    hit_dict = {"0": [], "1": []}
+    miss_dict = {"0": [], "1": []}
     model.train()
     model.training = True
     start_train = time()
-    if epoch == 25:
-        print('here!')
+    total_loss = 0.0
+
     for batch_idx, (data, target) in enumerate(train_loader):
 
         if args.cuda:
@@ -301,9 +271,7 @@ def train(epoch):
             
         data, target = Variable(data), Variable(target)
         labels = target.cpu().detach().numpy()
-        real_target = target
-        
-        real_target = torch.where(real_target == 2, torch.tensor(1, dtype=real_target.dtype), real_target)
+
         optimizer.zero_grad()
 
         # Only log filters for the first batch
@@ -315,9 +283,13 @@ def train(epoch):
             output, fm_val, hit, miss = model(data, epoch)
 
         # Compute loss and set model parameters
-        loss = F.nll_loss(output.cuda(), real_target)
+        loss = F.nll_loss(output.cuda(), target)
         loss.backward()
         optimizer.step()
+        total_loss += loss.item()
+
+        target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
+        output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
 
         # Computes and prints loss metrics
         if batch_idx % args.log_interval == 0:
@@ -328,29 +300,37 @@ def train(epoch):
         # Stores values for all three labels to plot 
         indices_0 = (labels == 0).nonzero()[0]
         indices_1 = (labels == 1).nonzero()[0]
-        indices_2 = (labels == 2).nonzero()[0]
         fm_val = fm_val.detach().cpu().numpy()
-        # hit = hit.detach().cpu().numpy()
-        # miss = miss.detach().cpu().numpy()
+        hit = hit.detach().cpu().numpy()
+        miss = miss.detach().cpu().numpy()
 
-        # print(data[indices_0].cpu())
-        # print(data[indices_1].cpu())
+        # plt.imshow(data[indices_0][0][0].detach().cpu().numpy(), cmap='gray')
+        # plt.colorbar()
+        # plt.show()
+        # plt.imshow(data[indices_1][0][0].detach().cpu().numpy(), cmap='gray')
+        # plt.colorbar()
+        # plt.show()
 
         fm_dict["0"].append(fm_val[indices_0])
         fm_dict["1"].append(fm_val[indices_1])
-        fm_dict["2"].append(fm_val[indices_2])
 
         hit_dict["0"].append(hit[indices_0])
         hit_dict["1"].append(hit[indices_1])
-        hit_dict["2"].append(hit[indices_2])
 
         miss_dict["0"].append(miss[indices_0])
         miss_dict["1"].append(miss[indices_1])
-        miss_dict["2"].append(miss[indices_2])
 
     plot_fm_histogram(fm_dict, experiment, epoch)
     plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
     plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
+    experiment.log_confusion_matrix(
+            y_true=target_total,
+            y_predicted=output_total,
+            labels=["Not Three", "Three"],
+            title="Train Set",
+            file_name="train.json"
+        )
+    experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
@@ -383,7 +363,7 @@ def test(epoch):
                                 torch.tensor(0, device=target.device))
 
             # Accumulate metrics  
-            output, fms, hit, miss = model(data, epoch)
+            output, fms, _, _ = model(data, epoch)
             target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
             output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
             test_loss += F.nll_loss(output, target, reduction='sum').item()
@@ -417,6 +397,8 @@ def test(epoch):
             y_true=target_total,
             y_predicted=output_total,
             labels=["Not Three", "Three"],
+            title="Test Set",
+            file_name="test.json"
         )
 
         # Now plot the histograms using accumulated feature maps
