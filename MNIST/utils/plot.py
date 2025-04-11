@@ -9,7 +9,7 @@ def visualize_filters(layer, dir='filters/', title="Filters"):
     K_hit = layer.K_hit.data.cpu().numpy()  # Convert to NumPy
     K_miss = layer.K_miss.data.cpu().numpy()
     
-    out_channels, in_channels, kernel_size, _ = K_hit.shape
+    out_channels, in_channels, _, _ = K_hit.shape
 
     # Ensure the directory exists
     os.makedirs(dir, exist_ok=True)
@@ -122,7 +122,8 @@ def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
             else:
                 ax_hit = axes[1][i-5]
             
-            ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
+            im = ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
+            fig.colorbar(im, ax=ax_hit)
             ax_hit.set_title(f"filter [{i},{j}]")
             ax_hit.set_xticks([])
             ax_hit.set_yticks([])
@@ -135,7 +136,7 @@ def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
         plt.savefig(os.path.join(
             'filters',
             f"{filter_name}_filter_epoch{epoch}.png"))
-    experiment.log_figure(figure_name=filter_name,
+    experiment.log_figure(figure_name=f'filters/{filter_name}',
                           figure=fig,
                           step=epoch)
     plt.clf()
@@ -146,15 +147,13 @@ def hit_miss_histograms(morph_dict, mode):
 
     assert (mode == "Hit" or mode == "Miss")
     
-    for key in ["0", "1", "2"]:
+    for key in ["0", "1"]:
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.hist(morph_dict[key], bins=50, alpha=0.75)
         if key == "0":
-            ax.set_title(f"{mode} Values for Black Images")
+            ax.set_title(f"{mode} Values for KMNIST Images")
         if key == "1":
             ax.set_title(f"{mode} Values for Three Images")
-        if key == "2":
-            ax.set_title(f"{mode} Values for Threes in Filters")
         ax.set_xlabel("Value")
         ax.set_ylabel("Frequency")
         ax.set_xlim(morph_dict[key].min(), morph_dict[key].max())
@@ -170,22 +169,19 @@ def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
         fm_dict_np[key] = np.concatenate(morph_dict[key]).flatten()
 
     hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'{mode} Black Images', figure=hists["0"], step=epoch)
-    experiment.log_figure(figure_name=f'{mode} Three Images', figure=hists["1"], step=epoch)
-    experiment.log_figure(figure_name=f'{mode} Threes in Filters', figure=hists["2"], step=epoch)
+    experiment.log_figure(figure_name=f'{mode}/KMNIST Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'{mode}/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms(fm_dict):
     figs = {}
     
-    for key in ["0", "1", "2"]:
+    for key in ["0", "1"]:
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.hist(fm_dict[key], bins=50, alpha=0.75)
         if key == "0":
-            ax.set_title(f"Feature Map Values for Black Images")
+            ax.set_title(f"Feature Map Values for KMNIST Images")
         if key == "1":
             ax.set_title(f"Feature Map Values for Three Images")
-        if key == "2":
-            ax.set_title(f"Feature Map Values for Threes in Filters")
         ax.set_xlabel("Value")
         ax.set_ylabel("Frequency")
         ax.set_xlim(fm_dict[key].min(), fm_dict[key].max())
@@ -199,9 +195,8 @@ def plot_fm_histogram(fm_dict, experiment, epoch):
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
 
     hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'Black Images', figure=hists["0"], step=epoch)
-    experiment.log_figure(figure_name=f'Three Images', figure=hists["1"], step=epoch)
-    experiment.log_figure(figure_name=f'Threes in Filters', figure=hists["2"], step=epoch)
+    experiment.log_figure(figure_name=f'FMs/KMNIST Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'FMs/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms_test(fm_dict):
     figs = {}
@@ -226,8 +221,8 @@ def plot_fm_histogram_test(fm_dict, experiment, epoch):
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
 
     hists = fm_histograms_test(fm_dict_np)
-    experiment.log_figure(figure_name=f'0-2', figure=hists["0-2"], step=epoch)
-    experiment.log_figure(figure_name=f'4-9', figure=hists["4-9"], step=epoch)
+    experiment.log_figure(figure_name=f'test/0-2', figure=hists["0-2"], step=epoch)
+    experiment.log_figure(figure_name=f'test/4-9', figure=hists["4-9"], step=epoch)
 
 def plot_conv_filters(filter_layer):
     plt.clf()
