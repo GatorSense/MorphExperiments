@@ -1,6 +1,6 @@
-# Morphological Neural Networks
+# Morphological Neural Networks (MNN)
 
-This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab. These experiments build off the work done in Xu (2023).
+This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab. These experiments are a continuation of the work done in Xu (2023).
 
 ## Instructions To Run
 
@@ -20,13 +20,13 @@ Refer to the help sections of the argument parser in train.py for more details.
 
 ## Metrics
 
-The following metrics are logged throughout training:
+The following metrics are logged by train.py:
   - Training and testing confusion matrices
   - Histograms of feature map values throughout training per class
-  - Heatmap on all test classes
+  - True vs. prediction label heatmap on all test classes
   - Hit and miss filters over training
 
-All of the above are viewed on [Comet.ml](https://www.comet.ml). To use this functionality, store the API key in .env file at the root directory in the following format:
+All of the above are viewed on [Comet.ml](https://www.comet.ml). To use this functionality, store the API key in .env file at the root directory with the following format:
 
 ```ini
 COMET_API_KEY=your_api_key_here
