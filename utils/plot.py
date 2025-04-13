@@ -5,16 +5,12 @@ import numpy as np
 
 # Was at the very top of the script, can't remember how it's different from plot_filters
 def visualize_filters(layer, dir='filters/', title="Filters"):
-    # Extract filter weights
-    K_hit = layer.K_hit.data.cpu().numpy()  # Convert to NumPy
+    K_hit = layer.K_hit.data.cpu().numpy()
     K_miss = layer.K_miss.data.cpu().numpy()
-    
     out_channels, in_channels, _, _ = K_hit.shape
 
-    # Ensure the directory exists
     os.makedirs(dir, exist_ok=True)
 
-    # Iterate over filters
     for i in range(out_channels):
         for j in range(in_channels):
             # Save K_hit
@@ -173,6 +169,8 @@ def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
     experiment.log_figure(figure_name=f'{mode}/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms(fm_dict):
+    plt.clf()
+    plt.close()
     figs = {}
     
     for key in ["0", "1"]:
@@ -199,6 +197,8 @@ def plot_fm_histogram(fm_dict, experiment, epoch):
     experiment.log_figure(figure_name=f'FMs/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms_test(fm_dict):
+    plt.clf()
+    plt.close()
     figs = {}
     
     for key in ["0-2", "4-9"]:
@@ -215,7 +215,9 @@ def fm_histograms_test(fm_dict):
     
     return figs
 
-def plot_fm_histogram_test(fm_dict, experiment, epoch):
+def plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch):
+    fm_dict = {"0-2": fms_0_2, "4-9": fms_4_9}
+
     fm_dict_np = {}          
     for key in fm_dict.keys():
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()

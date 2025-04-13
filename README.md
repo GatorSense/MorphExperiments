@@ -2,7 +2,7 @@
 
 This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab. These experiments build off the work done in Xu (2023).
 
-## Instructions to run
+## Instructions To Run
 
 Clone this repository:
 ```bash
@@ -26,7 +26,7 @@ The following metrics are logged throughout training:
   - Heatmap on all test classes
   - Hit and miss filters over training
 
-All of the above are viewed on [Comet.ml](https://www.comet.ml), and the user's API key must be put in a .env file in the following format:
+All of the above are viewed on [Comet.ml](https://www.comet.ml). To use this functionality, store the API key in .env file at the root directory in the following format:
 
 ```ini
 COMET_API_KEY=your_api_key_here

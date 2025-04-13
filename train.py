@@ -58,10 +58,29 @@ pprint(args_dict)
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
+if args.model_type == 'morph':
+    model = MNNModel()
+elif args.model_type == 'conv':
+    model = CNNModel()
+else:
+    model = MCNNModel()
+
+if args.cuda:
+    model.cuda()
+
+experiment = None
+if args.use_comet:
+    experiment = start(
+    api_key=os.environ["COMET_API_KEY"],
+    project_name="morphological",
+    workspace="joannekim")
+    experiment.log_parameters(args_dict)
+
+# Start loading data
 transform=transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
-    ])
+])
 
 train_dataset = datasets.MNIST(
     root='../data',
@@ -82,48 +101,29 @@ test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transform),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
-experiment = None
-if args.use_comet:
-    experiment = start(
-    api_key=os.environ["COMET_API_KEY"],
-    project_name="morphological",
-    workspace="joannekim")
-    experiment.log_parameters(args_dict)
-
 # Create custom train loader
 train_loader = DataLoader(ThreesAndNotThree(not_three, train_subset_3),
                           args.batch_size, shuffle=True, **kwargs)
-
-# Initialize model
-if args.model_type == 'morph':
-    model = MNNModel()
-elif args.model_type == 'conv':
-    model = CNNModel()
-else:
-    model = MCNNModel()
-
-if args.cuda:
-    model.cuda()
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
 
 def train(epoch):
-    target_total = np.array([], dtype=int)
-    output_total = np.array([], dtype=int)
-    fm_dict = {"0": [], "1": []}
-    hit_dict = {"0": [], "1": []}
-    miss_dict = {"0": [], "1": []}
     model.train()
     model.training = True
     start_train = time()
     total_loss = 0.0
 
+    target_total = np.array([], dtype=int)
+    output_total = np.array([], dtype=int)
+    fm_dict = {"0": [], "1": []}
+    hit_dict = {"0": [], "1": []}
+    miss_dict = {"0": [], "1": []}
+
     for batch_idx, (data, target) in enumerate(train_loader):
-        
         device = torch.device("cuda" if args.cuda else "cpu")
 
-        data, target = data.to(device), target.to(device)            
+        data, target = data.to(device), target.to(device)
         data, target = Variable(data), Variable(target)
         labels = target.cpu().detach().numpy()
 
@@ -138,11 +138,12 @@ def train(epoch):
             output, fm_val, hit, miss = model(data, epoch, experiment)
 
         # Compute loss and set model parameters
-        loss = F.nll_loss(output, target)
+        loss = F.nll_loss(output.cuda(), target)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
 
+        # Store predictions for confusion matrix
         target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
         output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
 
@@ -151,8 +152,8 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
-        
-        # Stores values for all three labels to plot 
+
+        # Store feature map values for histogram
         indices_0 = (labels == 0).nonzero()[0]
         indices_1 = (labels == 1).nonzero()[0]
         fm_val = fm_val.detach().cpu().numpy()
@@ -161,44 +162,40 @@ def train(epoch):
 
         fm_dict["0"].append(fm_val[indices_0])
         fm_dict["1"].append(fm_val[indices_1])
-
         hit_dict["0"].append(hit[indices_0])
         hit_dict["1"].append(hit[indices_1])
-
         miss_dict["0"].append(miss[indices_0])
         miss_dict["1"].append(miss[indices_1])
 
     if args.use_comet:
-        plot_fm_histogram(fm_dict, experiment, epoch)
-        plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
-        plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
+        experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
         experiment.log_confusion_matrix(
                 y_true=target_total,
                 y_predicted=output_total,
                 labels=["Not Three", "Three"],
                 title="Train Set",
                 file_name="train.json"
-            )
-        experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
+        )
+        plot_fm_histogram(fm_dict, experiment, epoch)
+        plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
+        plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
 
 def test(epoch):
-    # Initialize variables
-    target_total = np.array([], dtype=int)
-    output_total = np.array([], dtype=int)
-    model.eval()
     start_test = time()
+    model.training = False
+    model.eval()
     test_loss = 0
     correct = 0
-    model.training = False
+
+    target_total = np.array([], dtype=int)
+    output_total = np.array([], dtype=int)
     heatmap_data = np.zeros((10, 2))
-    model.eval()
- 
-    # Initialize lists to collect feature maps
     fms_0_2 = []
     fms_4_9 = []
+ 
     with torch.no_grad():
         for data, target in test_loader:
             if args.cuda:
@@ -207,21 +204,25 @@ def test(epoch):
                 data, target = data.cpu(), target.cpu()
 
             data, target = Variable(data), Variable(target)
-
             original_target = target.cpu().detach().numpy()
-
             target = torch.where(target == 3, 
                                 torch.tensor(1, device=target.device), 
                                 torch.tensor(0, device=target.device))
 
-            # Accumulate metrics  
+            # Accumulate metrics
             output, fms, _, _ = model(data, epoch, experiment)
-            target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
-            output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
             test_loss += F.nll_loss(output, target, reduction='sum').item()
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+            target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
+            output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
 
+            # Store predicted value for each MNIST class
+            pred_np = pred.cpu().detach().numpy().flatten()
+            for i in range(len(original_target)):
+                digit = original_target[i]
+                heatmap_data[digit][pred_np[i]] += 1
+            
             # Get feature maps for original targets < 3 and > 3
             original_target_tensor = torch.tensor(original_target).to(fms.device)
             indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
@@ -233,14 +234,7 @@ def test(epoch):
             if indices_4_9.numel() > 0:
                 fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
 
-            # Store predicted value for each MNIST class
-            pred_np = pred.cpu().detach().numpy().flatten()
-            for i in range(len(original_target)):
-                digit = original_target[i]
-                heatmap_data[digit][pred_np[i]] += 1
-
         test_loss /= len(test_loader.dataset)
-
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
@@ -253,12 +247,8 @@ def test(epoch):
                 title="Test Set",
                 file_name="test.json"
             )
-
-        if args.use_comet:
-            # Now plot the histograms using accumulated feature maps
-            fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
-            plot_fm_histogram_test(fm_hists, experiment, epoch)
             plot_heatmap(heatmap_data, experiment, epoch)
+            plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch)
 
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))

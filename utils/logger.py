@@ -1,5 +1,5 @@
 import torch
-     
+
 def log_weights(model):
     weights = {}
     # Calculate the mean of the square root of the squares of the weights
