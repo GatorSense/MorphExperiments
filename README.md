@@ -14,4 +14,4 @@ The following metrics are logged throughout training:
   - Heatmap on all test classes
   - Hit and miss filters over training
 
-All of the above are viewed on comet.ml{comet.ml}, and the user's API key must be put in a .env file.
+All of the above are viewed on [Comet.ml](https://www.comet.ml), and the user's API key must be put in a .env file.
