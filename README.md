@@ -1,6 +1,6 @@
 # Morphological Neural Networks
 
-This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab.
+This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab. These experiments build of the work done in Xu (2023).
 
 ## Instructions to run
 
@@ -31,3 +31,6 @@ All of the above are viewed on [Comet.ml](https://www.comet.ml), and the user's 
 ```ini
 COMET_API_KEY=your_api_key_here
 ```
+
+## Refrences
+Xu, Weihuang (2023). Deep Morph-Convolutional Neural Network: Combining Morphological Transform and Convolution in Deep Neural Networks. [Doctoral dissertation, University of Florida]. UF Digital Collections. https://ufdc.ufl.edu/UFE0059487/00001/pd
