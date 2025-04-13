@@ -32,5 +32,5 @@ All of the above are viewed on [Comet.ml](https://www.comet.ml), and the user's 
 COMET_API_KEY=your_api_key_here
 ```
 
-## Refrences
+## References
 Xu, Weihuang (2023). Deep Morph-Convolutional Neural Network: Combining Morphological Transform and Convolution in Deep Neural Networks. [Doctoral dissertation, University of Florida]. UF Digital Collections. https://ufdc.ufl.edu/UFE0059487/00001/pd
