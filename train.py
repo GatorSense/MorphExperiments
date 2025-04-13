@@ -138,7 +138,7 @@ def train(epoch):
             output, fm_val, hit, miss = model(data, epoch, experiment)
 
         # Compute loss and set model parameters
-        loss = F.nll_loss(output, target)
+        loss = F.nll_loss(output.cuda(), target)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -167,7 +167,7 @@ def train(epoch):
         miss_dict["0"].append(miss[indices_0])
         miss_dict["1"].append(miss[indices_1])
 
-    if experiment:
+    if args.use_comet:
         experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
         experiment.log_confusion_matrix(
                 y_true=target_total,
@@ -239,7 +239,7 @@ def test(epoch):
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
         
-        if experiment:
+        if args.use_comet:
             experiment.log_confusion_matrix(
                 y_true=target_total,
                 y_predicted=output_total,
@@ -248,9 +248,6 @@ def test(epoch):
                 file_name="test.json"
             )
             plot_heatmap(heatmap_data, experiment, epoch)
-
-            # Maybe move this into the function
-            # fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
             plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch)
 
         stop_test = time()

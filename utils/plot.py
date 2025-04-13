@@ -169,6 +169,8 @@ def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
     experiment.log_figure(figure_name=f'{mode}/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms(fm_dict):
+    plt.clf()
+    plt.close()
     figs = {}
     
     for key in ["0", "1"]:
@@ -195,6 +197,8 @@ def plot_fm_histogram(fm_dict, experiment, epoch):
     experiment.log_figure(figure_name=f'FMs/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms_test(fm_dict):
+    plt.clf()
+    plt.close()
     figs = {}
     
     for key in ["0-2", "4-9"]:
