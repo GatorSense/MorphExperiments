@@ -38,20 +38,21 @@ class FilterOutThrees(Dataset):
         else:
             return self.black_imgs[index - len(self.threes) - len(self.filter_3s)], 0
         
-class ThreesAndKMNIST(Dataset):
-    def __init__(self, kmnist, threes):
-        self.kmnist = kmnist
+class ThreesAndNotThree(Dataset):
+    def __init__(self, not_three, threes):
+        self.not_three = not_three
         self.threes = threes
     
     def __len__(self):
-        return len(self.kmnist) + len(self.threes)
+        return len(self.not_three) + len(self.threes)
     
     def __getitem__(self, index):
         if index < len(self.threes):
             image, _ = self.threes[index]
             return image, 1
         else:
-            return self.kmnist[index - len(self.threes)], 0
+            image, _ = self.not_three[index - len(self.threes)]
+            return image, 0
         
 def generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel, show_plots=False):
     filter_indices = list(rand_index)

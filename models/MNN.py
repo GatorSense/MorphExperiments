@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 class _Hitmiss(Function):
     def forward(self, input, K_hit, K_miss, kernel_size, out_channels):
-        batch_size, in_channels, ih, iw = input.size()  
+        batch_size, in_channels, ih, _ = input.size()  
         fh = ih - kernel_size + 1
         out_Fmap = in_channels * out_channels
         num_blocks = fh * fh * in_channels
@@ -24,9 +24,6 @@ class _Hitmiss(Function):
         input = input.unfold(2, kernel_size, 1) \
                      .unfold(3, kernel_size, 1) \
                      .permute(0, 2, 3, 1, 4, 5)
-
-        device = input.device
-        input = input.to(device)
 
         # K_hit, K_miss => (out_channels, in_channels, k, k)
         # Insert batch & (fh, fh) dims so they broadcast properly:
