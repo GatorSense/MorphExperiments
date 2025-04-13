@@ -1,6 +1,6 @@
 # Morphological Neural Networks
 
-This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab. These experiments build of the work done in Xu (2023).
+This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab. These experiments build off the work done in Xu (2023).
 
 ## Instructions to run
 
