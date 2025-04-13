@@ -4,9 +4,21 @@ This is the repository for the current experiments on MNNs in the Machine Learni
 
 ## Instructions to run
 
+Clone this repository:
+```bash
+git clone https://github.com/GatorSense/MorphExperiments
+cd MorphExperiments
+```
+
 Use the train.py file to train a binary classifier on hit-miss filters on MNIST images of threes and not threes (fours and eights). The test accuracy will include all 10 classes found in the MNIST data, showcasing its ability to reject classes, even if not included in the training data.
 
-### Other Metrics
+```bash
+python train.py [args]
+```
+
+Refer to the help sections of the argument parser in train.py for more details.
+
+## Metrics
 
 The following metrics are logged throughout training:
   - Training and testing confusion matrices
