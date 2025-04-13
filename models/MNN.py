@@ -31,8 +31,6 @@ class _Hitmiss(Function):
         K_hit_  = K_hit.unsqueeze(0).unsqueeze(2).unsqueeze(3)  # => (1, out_channels, 1, 1, in_channels, k, k)
         K_miss_ = K_miss.unsqueeze(0).unsqueeze(2).unsqueeze(3) # same shape
 
-        print(input.device, K_hit.device, K_miss.device)
-
         # F_hit: shape (B, out_channels, fh, fh, in_channels, k, k)
         F_hit  = -1.0 * F.relu( (input_ - K_hit_) * -1 )
         # Sum over all of (fh, fh, in_channels, k, k) => (2,3,4,5,6)
