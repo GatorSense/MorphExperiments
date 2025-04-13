@@ -211,7 +211,9 @@ def fm_histograms_test(fm_dict):
     
     return figs
 
-def plot_fm_histogram_test(fm_dict, experiment, epoch):
+def plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch):
+    fm_dict = {"0-2": fms_0_2, "4-9": fms_4_9}
+
     fm_dict_np = {}          
     for key in fm_dict.keys():
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()

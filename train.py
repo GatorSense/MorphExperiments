@@ -58,10 +58,29 @@ pprint(args_dict)
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
+if args.model_type == 'morph':
+    model = MNNModel()
+elif args.model_type == 'conv':
+    model = CNNModel()
+else:
+    model = MCNNModel()
+
+if args.cuda:
+    model.cuda()
+
+experiment = None
+if args.use_comet:
+    experiment = start(
+    api_key=os.environ["COMET_API_KEY"],
+    project_name="morphological",
+    workspace="joannekim")
+    experiment.log_parameters(args_dict)
+
+# Start loading data
 transform=transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
-    ])
+])
 
 train_dataset = datasets.MNIST(
     root='../data',
@@ -82,28 +101,9 @@ test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transform),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
-experiment = None
-if args.use_comet:
-    experiment = start(
-    api_key=os.environ["COMET_API_KEY"],
-    project_name="morphological",
-    workspace="joannekim")
-    experiment.log_parameters(args_dict)
-
 # Create custom train loader
 train_loader = DataLoader(ThreesAndNotThree(not_three, train_subset_3),
                           args.batch_size, shuffle=True, **kwargs)
-
-# Initialize model
-if args.model_type == 'morph':
-    model = MNNModel()
-elif args.model_type == 'conv':
-    model = CNNModel()
-else:
-    model = MCNNModel()
-
-if args.cuda:
-    model.cuda()
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
@@ -143,15 +143,15 @@ def train(epoch):
         optimizer.step()
         total_loss += loss.item()
 
+        # Store predictions for confusion matrix
+        target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
+        output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
+
         # Computes and prints loss metrics
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
-
-        # Store predictions for confusion matrix
-        target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
-        output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
 
         # Store feature map values for histogram
         indices_0 = (labels == 0).nonzero()[0]
@@ -160,7 +160,6 @@ def train(epoch):
         hit = hit.detach().cpu().numpy()
         miss = miss.detach().cpu().numpy()
 
-        # Try to make this one line function
         fm_dict["0"].append(fm_val[indices_0])
         fm_dict["1"].append(fm_val[indices_1])
         hit_dict["0"].append(hit[indices_0])
@@ -168,17 +167,18 @@ def train(epoch):
         miss_dict["0"].append(miss[indices_0])
         miss_dict["1"].append(miss[indices_1])
 
-    experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
-    experiment.log_confusion_matrix(
-            y_true=target_total,
-            y_predicted=output_total,
-            labels=["Not Three", "Three"],
-            title="Train Set",
-            file_name="train.json"
-    )
-    plot_fm_histogram(fm_dict, experiment, epoch)
-    plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
-    plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
+    if experiment:
+        experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
+        experiment.log_confusion_matrix(
+                y_true=target_total,
+                y_predicted=output_total,
+                labels=["Not Three", "Three"],
+                title="Train Set",
+                file_name="train.json"
+        )
+        plot_fm_histogram(fm_dict, experiment, epoch)
+        plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
+        plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
@@ -239,18 +239,19 @@ def test(epoch):
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
         
-        experiment.log_confusion_matrix(
-            y_true=target_total,
-            y_predicted=output_total,
-            labels=["Not Three", "Three"],
-            title="Test Set",
-            file_name="test.json"
-        )
-        plot_heatmap(heatmap_data, experiment, epoch)
+        if experiment:
+            experiment.log_confusion_matrix(
+                y_true=target_total,
+                y_predicted=output_total,
+                labels=["Not Three", "Three"],
+                title="Test Set",
+                file_name="test.json"
+            )
+            plot_heatmap(heatmap_data, experiment, epoch)
 
-        # Maybe move this into the function
-        fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
-        plot_fm_histogram_test(fm_hists, experiment, epoch)
+            # Maybe move this into the function
+            # fm_hists = {"0-2": fms_0_2, "4-9": fms_4_9}
+            plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch)
 
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))
