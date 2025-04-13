@@ -121,9 +121,9 @@ def train(epoch):
     miss_dict = {"0": [], "1": []}
 
     for batch_idx, (data, target) in enumerate(train_loader):
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
+        device = torch.device("cuda" if args.cuda else "cpu")
 
+        data, target = data.to(device), target.to(device)
         data, target = Variable(data), Variable(target)
         labels = target.cpu().detach().numpy()
 
@@ -138,7 +138,7 @@ def train(epoch):
             output, fm_val, hit, miss = model(data, epoch, experiment)
 
         # Compute loss and set model parameters
-        loss = F.nll_loss(output.cuda(), target)
+        loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -200,8 +200,10 @@ def test(epoch):
         for data, target in test_loader:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
+            else:
+                data, target = data.cpu(), target.cpu()
 
-            data, target = Variable(data.cuda()), Variable(target)
+            data, target = Variable(data), Variable(target)
             original_target = target.cpu().detach().numpy()
             target = torch.where(target == 3, 
                                 torch.tensor(1, device=target.device), 
