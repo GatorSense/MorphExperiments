@@ -151,7 +151,7 @@ def hit_miss_histograms(morph_dict, mode):
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.hist(morph_dict[key], bins=50, alpha=0.75)
         if key == "0":
-            ax.set_title(f"{mode} Values for KMNIST Images")
+            ax.set_title(f"{mode} Values for Not Three Images")
         if key == "1":
             ax.set_title(f"{mode} Values for Three Images")
         ax.set_xlabel("Value")
@@ -169,7 +169,7 @@ def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
         fm_dict_np[key] = np.concatenate(morph_dict[key]).flatten()
 
     hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'{mode}/KMNIST Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'{mode}/Not Three Images', figure=hists["0"], step=epoch)
     experiment.log_figure(figure_name=f'{mode}/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms(fm_dict):
@@ -179,7 +179,7 @@ def fm_histograms(fm_dict):
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.hist(fm_dict[key], bins=50, alpha=0.75)
         if key == "0":
-            ax.set_title(f"Feature Map Values for KMNIST Images")
+            ax.set_title(f"Feature Map Values for Not Three Images")
         if key == "1":
             ax.set_title(f"Feature Map Values for Three Images")
         ax.set_xlabel("Value")
@@ -195,7 +195,7 @@ def plot_fm_histogram(fm_dict, experiment, epoch):
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
 
     hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'FMs/KMNIST Images', figure=hists["0"], step=epoch)
+    experiment.log_figure(figure_name=f'FMs/Not Three Images', figure=hists["0"], step=epoch)
     experiment.log_figure(figure_name=f'FMs/Three Images', figure=hists["1"], step=epoch)
 
 def fm_histograms_test(fm_dict):
@@ -228,7 +228,7 @@ def plot_conv_filters(filter_layer):
     plt.clf()
     filter = filter_layer.weight.data.cpu().numpy()
 
-    out_channels, in_channels, kernel_size, _ = filter.shape
+    out_channels, in_channels, _, _ = filter.shape
 
     # Calculate the grid size based on the number of filters (out_channels)
     cols = 5  # Fixed number of columns (you can adjust this)
