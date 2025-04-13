@@ -101,6 +101,15 @@ test_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, transform=transform),
     batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
+experiment = None
+if args.use_comet:
+    experiment = start(
+        api_key=os.environ["COMET_API_KEY"],
+        project_name="morphological",
+        workspace="joannekim"
+    )
+    experiment.log_parameters(args_dict)
+
 # Create custom train loader
 train_loader = DataLoader(ThreesAndNotThree(not_three, train_subset_3),
                           args.batch_size, shuffle=True, **kwargs)
@@ -157,28 +166,42 @@ def train(epoch):
         indices_0 = (labels == 0).nonzero()[0]
         indices_1 = (labels == 1).nonzero()[0]
         fm_val = fm_val.detach().cpu().numpy()
-        hit = hit.detach().cpu().numpy()
-        miss = miss.detach().cpu().numpy()
+
+        if hit is not None:
+            hit = hit.detach().cpu().numpy()
+
+        if miss is not None:
+            miss = miss.detach().cpu().numpy()
 
         fm_dict["0"].append(fm_val[indices_0])
         fm_dict["1"].append(fm_val[indices_1])
-        hit_dict["0"].append(hit[indices_0])
-        hit_dict["1"].append(hit[indices_1])
-        miss_dict["0"].append(miss[indices_0])
-        miss_dict["1"].append(miss[indices_1])
+
+        if hit is not None:
+            hit_dict["0"].append(hit[indices_0])
+            hit_dict["1"].append(hit[indices_1])
+
+        if miss is not None:
+            miss_dict["0"].append(miss[indices_0])
+            miss_dict["1"].append(miss[indices_1])
 
     if args.use_comet:
-        experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
+        plot_fm_histogram(fm_dict, experiment, epoch)
+
+        if hit is not None:
+            plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
+
+        if miss is not None:
+            plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
+
         experiment.log_confusion_matrix(
                 y_true=target_total,
                 y_predicted=output_total,
                 labels=["Not Three", "Three"],
                 title="Train Set",
                 file_name="train.json"
-        )
-        plot_fm_histogram(fm_dict, experiment, epoch)
-        plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
-        plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
+            )
+        
+        experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
@@ -270,8 +293,3 @@ accuracy /= 100
 print(accuracy.max(0))
 stop_whole = time()
 print('==== Whole Time ====', str(stop_whole-start_whole))
-
-plt.figure()
-plt.plot(accuracy[1:].numpy())
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy (%)')

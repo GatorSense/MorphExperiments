@@ -100,11 +100,8 @@ def plot_morphed_filters_initial(filters, experiment, filter_name):
     plt.close()
 
 # Used in forward function
-def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
+def plot_morph_filters_forward(filter_layer, experiment, epoch, filter_name):
     plt.clf()
-
-    os.makedirs('filters/', exist_ok=True)
-    os.makedirs("feature_maps/morph", exist_ok=True)
 
     filter = filter_layer.data.cpu().numpy()
     out_channels, in_channels, _, _ = filter.shape
@@ -137,6 +134,42 @@ def plot_filters_forward(filter_layer, experiment, epoch, filter_name):
                           step=epoch)
     plt.clf()
     plt.close()
+
+def plot_conv_filters_forward(filter_layer, experiment, epoch):
+    plt.clf()
+    filter = filter_layer.weight.data.cpu().numpy()
+
+    out_channels, in_channels, _, _ = filter.shape
+
+    # Calculate the grid size based on the number of filters (out_channels)
+    cols = 5  # Fixed number of columns (you can adjust this)
+    rows = math.ceil(out_channels / cols)  # Calculate the number of rows
+
+    fig, axes = plt.subplots(rows, cols, figsize=(16, 8))
+
+    for i in range(out_channels):
+        for j in range(in_channels):
+            row = i // cols
+            col = i % cols
+            
+            ax_hit = axes[row][col] if rows > 1 else axes[col]  # Adjust for single row
+
+            im = ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
+            fig.colorbar(im, ax=ax_hit)
+            ax_hit.set_title(f"filter [{i},{j}]")
+            ax_hit.set_xticks([])
+            ax_hit.set_yticks([])
+
+    fig.suptitle("Filters")
+    fig.tight_layout()
+
+    experiment.log_figure(figure_name=f'filters/conv',
+                          figure=fig,
+                          step=epoch)
+    plt.clf()
+    plt.close()
+
+    return fig, plt
 
 def hit_miss_histograms(morph_dict, mode):
     figs = {}
@@ -225,32 +258,3 @@ def plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch):
     hists = fm_histograms_test(fm_dict_np)
     experiment.log_figure(figure_name=f'test/0-2', figure=hists["0-2"], step=epoch)
     experiment.log_figure(figure_name=f'test/4-9', figure=hists["4-9"], step=epoch)
-
-def plot_conv_filters(filter_layer):
-    plt.clf()
-    filter = filter_layer.weight.data.cpu().numpy()
-
-    out_channels, in_channels, _, _ = filter.shape
-
-    # Calculate the grid size based on the number of filters (out_channels)
-    cols = 5  # Fixed number of columns (you can adjust this)
-    rows = math.ceil(out_channels / cols)  # Calculate the number of rows
-
-    fig, axes = plt.subplots(rows, cols, figsize=(16, 8))
-
-    for i in range(out_channels):
-        for j in range(in_channels):
-            row = i // cols
-            col = i % cols
-            
-            ax_hit = axes[row][col] if rows > 1 else axes[col]  # Adjust for single row
-
-            ax_hit.imshow(filter[i, j], cmap='gray', interpolation='nearest')
-            ax_hit.set_title(f"filter [{i},{j}]")
-            ax_hit.set_xticks([])
-            ax_hit.set_yticks([])
-
-    fig.suptitle("Filters")
-    fig.tight_layout()
-
-    return fig, plt
