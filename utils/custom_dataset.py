@@ -59,14 +59,14 @@ def generate_hitmiss_morphed_filters(train_subset_3, rand_index, kernel, show_pl
     dilated_filters = []
     eroded_filters = []
     for idx in filter_indices:
-        img, label = train_subset_3[idx]  # assuming each item returns (image, label)
+        img, label = train_subset_3[idx] # Assuming each item returns (image, label)
         if show_plots:
             plt.imshow(img[0], cmap='gray')
             plt.show()
 
-        img = img.unsqueeze(0)  # Add batch dimension if needed, shape becomes [1, C, H, W]
+        img = img.unsqueeze(0) # Add batch dimension if needed, shape becomes [1, C, H, W]
         dilated_img = kornia.morphology.dilation(img, kernel)
-        dilated_filters.append((dilated_img.squeeze(0), label))  # Remove batch dim if needed
+        dilated_filters.append((dilated_img.squeeze(0), label)) # Remove batch dim if needed
         eroded_img = kornia.morphology.erosion(img, kernel)
         eroded_filters.append((eroded_img.squeeze(0), label))
 

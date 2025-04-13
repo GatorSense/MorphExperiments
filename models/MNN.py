@@ -113,7 +113,6 @@ class MNN(nn.Module):
         self.set_hit_filters(eroded_filters)
         self.set_miss_filters(dilated_filters)
 
-
     def forward(self, input):
         #import pdb; pdb.set_trace()
         return _Hitmiss().forward(input, self.K_hit, self.K_miss, self.kernel_size, self.out_channels)

@@ -5,16 +5,12 @@ import numpy as np
 
 # Was at the very top of the script, can't remember how it's different from plot_filters
 def visualize_filters(layer, dir='filters/', title="Filters"):
-    # Extract filter weights
-    K_hit = layer.K_hit.data.cpu().numpy()  # Convert to NumPy
+    K_hit = layer.K_hit.data.cpu().numpy()
     K_miss = layer.K_miss.data.cpu().numpy()
-    
     out_channels, in_channels, _, _ = K_hit.shape
 
-    # Ensure the directory exists
     os.makedirs(dir, exist_ok=True)
 
-    # Iterate over filters
     for i in range(out_channels):
         for j in range(in_channels):
             # Save K_hit
