@@ -67,6 +67,7 @@ MorphExperiments/
 │  ├─ plot.py            # Plots feature map histograms and filters through training
 ├─ .gitignore
 ├─ train.py              # Script to run for training loop
+├─ demo.py               # Script to run pretrained model and show accuracy
 └─ README.md
 ```
 
