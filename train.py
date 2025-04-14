@@ -147,7 +147,7 @@ def train(epoch):
             output, fm_val, hit, miss = model(data, epoch, experiment)
 
         # Compute loss and set model parameters
-        loss = F.nll_loss(output.cuda(), target)
+        loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
