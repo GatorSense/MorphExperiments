@@ -12,11 +12,35 @@ cd MorphExperiments
 
 Use the train.py file to train a binary classifier on hit-miss filters on MNIST images of threes and not threes (fours and eights). The test accuracy will include all 10 classes found in the MNIST data, showcasing its ability to reject classes, even if not included in the training data.
 
+For example:
+
 ```bash
-python train.py [args]
+python train.py --epochs 100 --lr 0.1 --use-comet
 ```
 
-Refer to the help sections of the argument parser in train.py for more details.
+These are all arguments used in our script:
+
+```python
+parser = argparse.ArgumentParser(description='PyTorch MNIST with MNNV2')
+parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+                    help='input batch size for training (default: 64)')
+parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+                    help='input batch size for testing (default: 1000)')
+parser.add_argument('--epochs', type=int, default=100, metavar='N',
+                    help='number of epochs to train (default: 10)')
+parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
+                    help='learning rate (default: 0.1)')
+parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
+                    help='SGD momentum (default: 0.5)')
+parser.add_argument('--no-cuda', action='store_true', default=False,
+                    help='disables CUDA training')
+parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                    help='how many batches to wait before logging training status')
+parser.add_argument('--model-type', type=str, default='morph', metavar='N',
+                    help='type of layer to use (default: morph, could use conv or MCNN)')
+parser.add_argument('--use-comet', action='store_true', default=False,
+                    help='uses comet.ml to log training metrics and graphics')
+```
 
 ## Metrics
 
