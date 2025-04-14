@@ -19,7 +19,6 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 from time import time
 from torch.utils.data import DataLoader, Subset
-import matplotlib.pyplot as plt
 from utils.plot import *
 from utils.logger import log_weights
 from utils.custom_dataset import ThreesAndNotThree
@@ -32,24 +31,26 @@ load_dotenv()
 start_whole = time()
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST with MNNV2')
-parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+parser.add_argument('--batch-size', type=int, default=64,
                     help='input batch size for training (default: 64)')
-parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+parser.add_argument('--test-batch-size', type=int, default=1000,
                     help='input batch size for testing (default: 1000)')
-parser.add_argument('--epochs', type=int, default=100, metavar='N',
+parser.add_argument('--epochs', type=int, default=100,
                     help='number of epochs to train (default: 10)')
-parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
+parser.add_argument('--lr', type=float, default=0.1,
                     help='learning rate (default: 0.1)')
-parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
+parser.add_argument('--momentum', type=float, default=0.5,
                     help='SGD momentum (default: 0.5)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+parser.add_argument('--log-interval', type=int, default=10,
                     help='how many batches to wait before logging training status')
-parser.add_argument('--model-type', type=str, default='morph', metavar='N',
+parser.add_argument('--model-type', type=str, default='morph',
                     help='type of layer to use (default: morph, could use conv or MCNN)')
 parser.add_argument('--use-comet', action='store_true', default=False,
                     help='uses comet.ml to log training metrics and graphics')
+parser.add_argument('--model-filename', type=str, default=None,
+                    help='filename for saved model (default: None')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -288,6 +289,9 @@ for epoch in range(1,args.epochs+1):
         experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
         weights = log_weights(model)
         experiment.log_metrics(weights)
+
+if args.model_filename is not None:
+    torch.save(model, args.model_filename)
 
 accuracy /= 100
 print(accuracy.max(0))
