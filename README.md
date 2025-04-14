@@ -34,7 +34,7 @@ COMET_API_KEY=your_api_key_here
 
 ## Project Structure
 
-```rust
+```bash
 MorphExperiments/
 ├─ models/
 │  ├─ MNN.py             # Implementation of learnable Hit-Miss transformation
