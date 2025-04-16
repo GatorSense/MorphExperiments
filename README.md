@@ -2,7 +2,7 @@
 
 This is the repository for the current experiments on MNNs in the Machine Learning and Sensing Lab. These experiments are a continuation of the work done in Xu (2023).
 
-## Instructions To Run
+## Instructions To Train
 
 Clone this repository:
 ```bash
@@ -39,6 +39,10 @@ options:
   --model-filename MODEL_FILENAME
                         filename for saved model (default: None)
 ```
+
+## Instructions To Run Pretrained model
+
+Simplly put the pretrained model.pth file in the same directory as demo.py and run that script.
 
 ## Metrics
 
