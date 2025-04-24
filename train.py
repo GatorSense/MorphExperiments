@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
-# -- coding: utf-8 --
 """
-Created on Wed Nov  8 14:57:53 2017
+This code is a heavily modified version of code originally written by Xu (2023), 
+revised and adapted by Joanne Kim and Sam Gallic.
 
-@author: weihuangxu
+Original source:
+Xu, W. (2023). Deep Morph-Convolutional Neural Network: Combining Morphological Transform and Convolution in Deep Neural Networks
+(Doctoral dissertation, University of Florida). UF Digital Collections. https://ufdc.ufl.edu/UFE0059487/00001/pd
 """
 
 import matplotlib
