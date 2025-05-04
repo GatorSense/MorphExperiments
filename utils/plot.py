@@ -200,6 +200,8 @@ def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
     hists = fm_histograms(fm_dict_np)
     experiment.log_figure(figure_name=f'{mode}/Not Three Images', figure=hists["0"], step=epoch)
     experiment.log_figure(figure_name=f'{mode}/Three Images', figure=hists["1"], step=epoch)
+    # Add another row for threes in filter here!
+    # experiment.log_figure(figure_name=f'{mode}/Three Images in Filter', figure=hists["2"], step=epoch)
 
 def fm_histograms(fm_dict):
     plt.clf()

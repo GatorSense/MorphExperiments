@@ -50,6 +50,8 @@ parser.add_argument('--model-type', type=str, default='morph',
                     help='type of layer to use (default: morph, could use conv or MCNN)')
 parser.add_argument('--use-comet', action='store_true', default=False,
                     help='uses comet.ml to log training metrics and graphics')
+parser.add_argument('--filter-threes', action='store_true', default=False,
+                    help='initializes filters to randomly selected threes')
 parser.add_argument('--model-filename', type=str, default=None,
                     help='filename for saved model (default: None')
 
@@ -59,16 +61,6 @@ args_dict = vars(args)
 pprint(args_dict)
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-
-if args.model_type == 'morph':
-    model = MorphTripletModel()
-elif args.model_type == 'conv':
-    model = CNNModel()
-else:
-    model = MCNNModel()
-
-if args.cuda:
-    model.cuda()
 
 experiment = None
 if args.use_comet:
@@ -114,6 +106,27 @@ if args.use_comet:
         workspace="joannekim"
     )
     experiment.log_parameters(args_dict)
+
+if args.model_type == 'morph':
+    if args.filter_threes:
+        rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
+        selected_3 = Subset(train_subset_3, rand_index)
+        filter_list = [selected_3]
+        model = MorphTripletModel(filter_list=filter_list)
+    else:
+        model = MorphTripletModel() 
+elif args.model_type == 'conv':
+    model = CNNModel()
+else:
+    model = MCNNModel()
+
+if args.cuda:
+    model.cuda()
+
+# remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
+# train_subset_3 = Subset(train_subset_3, remaining_indices)
+# train_loader = DataLoader(FilterOutThrees(not_three, train_subset_3, selected_3),
+#                           args.batch_size, shuffle=True, **kwargs)
 
 # Create custom train loader
 train_loader = DataLoader(TripletThreesAndNotThreeWithLabel(not_three, train_subset_3),
