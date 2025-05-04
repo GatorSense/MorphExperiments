@@ -15,6 +15,7 @@ import torch.nn.functional as F
 
 class _Hitmiss(Function):
     def forward(self, input, K_hit, K_miss, kernel_size, out_channels):
+        activation = nn.LeakyReLU()
         batch_size, in_channels, ih, _ = input.size()  
         fh = ih - kernel_size + 1
         out_Fmap = in_channels * out_channels
@@ -55,7 +56,7 @@ class _Hitmiss(Function):
         F_hit_list  = F_hit_list_val.view(batch_size, out_Fmap, fh, fh)
         F_miss_list = F_miss_list_val.view(batch_size, out_Fmap, fh, fh)
 
-        return F_map, F_hit_list, F_miss_list
+        return F.max_pool1d(torch.squeeze(F_map), 10), F_hit_list, F_miss_list
 
 class MNN(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, filter_list=None):

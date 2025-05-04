@@ -21,7 +21,7 @@ from time import time
 from torch.utils.data import DataLoader, Subset
 from utils.plot import *
 from utils.logger import log_weights
-from utils.custom_dataset import ThreesAndNotThree
+from utils.custom_dataset import TripletThreesAndNotThreeWithLabel
 from pprint import pprint
 from dotenv import load_dotenv
 from models.models import *
@@ -60,7 +60,7 @@ pprint(args_dict)
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 if args.model_type == 'morph':
-    model = MNNModel()
+    model = MorphTripletModel()
 elif args.model_type == 'conv':
     model = CNNModel()
 else:
@@ -94,6 +94,9 @@ targets = train_dataset.targets
 idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 train_subset_3 = Subset(train_dataset, idx_3)
 
+criterion_cls   = nn.NLLLoss()
+criterion_trip  = nn.TripletMarginLoss(margin=1000.0)
+
 idx_48 = ((targets == 4) | (targets == 8)).nonzero(as_tuple=True)[0]
 idx_48 = np.random.randint(0, len(idx_48), len(train_subset_3))
 not_three = Subset(train_dataset, idx_48)
@@ -112,13 +115,16 @@ if args.use_comet:
     experiment.log_parameters(args_dict)
 
 # Create custom train loader
-train_loader = DataLoader(ThreesAndNotThree(not_three, train_subset_3),
-                          args.batch_size, shuffle=True, **kwargs)
+train_loader = DataLoader(TripletThreesAndNotThreeWithLabel(not_three, train_subset_3),
+                                                            args.batch_size, shuffle=True, **kwargs)
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
 
 def train(epoch):
+    total_class = 0.0
+    total_triplet = 0.0
+
     model.train()
     model.training = True
     start_train = time()
@@ -130,69 +136,77 @@ def train(epoch):
     hit_dict = {"0": [], "1": []}
     miss_dict = {"0": [], "1": []}
 
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, (A, P, N, y) in enumerate(train_loader):
         device = torch.device("cuda" if args.cuda else "cpu")
 
-        data, target = data.to(device), target.to(device)
-        data, target = Variable(data), Variable(target)
-        labels = target.cpu().detach().numpy()
+        labels = y.detach().cpu()
 
+        A, P, N = A.to(device), P.to(device), N.to(device)
         optimizer.zero_grad()
 
         # Only log filters for the first batch
         if (batch_idx == 0):
             model.log_filters(True)
-            output, fm_val, hit, miss = model(data, epoch, experiment)
+            emb_a, emb_p, emb_n = model(A, P, N, epoch, experiment)
             model.log_filters(False)
         else:
-            output, fm_val, hit, miss = model(data, epoch, experiment)
+            emb_a, emb_p, emb_n = model(A, P, N, epoch, experiment)
+
+        loss_trip = criterion_trip(emb_a, emb_p, emb_n)
+
+        logits = model.head(emb_a)
+        loss_cls = criterion_cls(logits.to(device), y.to(device))
+
+        loss = loss_trip
+
+        total_triplet = total_triplet + loss_trip
+        total_class = total_class + loss_cls
 
         # Compute loss and set model parameters
-        loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
 
         # Store predictions for confusion matrix
-        target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
-        output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
+        target_total = np.concatenate([target_total, y.cpu().detach().numpy()], axis=None)
+        output_total = np.concatenate([output_total, logits.argmax(dim=1).cpu().detach().numpy()], axis=None)
 
         # Computes and prints loss metrics
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+        # if batch_idx % args.log_interval == 0:
+        #     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+        #         epoch, len(train_loader.dataset),
+        #         100. * batch_idx / len(train_loader), loss.item()))
 
         # Store feature map values for histogram
-        indices_0 = (labels == 0).nonzero()[0]
-        indices_1 = (labels == 1).nonzero()[0]
-        fm_val = fm_val.detach().cpu().numpy()
+        indices_0 = (y == 0).nonzero()[0]
+        indices_1 = (y == 1).nonzero()[0]
+        fm_val = emb_a.detach().cpu().numpy()
 
-        if hit is not None:
-            hit = hit.detach().cpu().numpy()
+        # if hit is not None:
+        #     hit = hit.detach().cpu().numpy()
 
-        if miss is not None:
-            miss = miss.detach().cpu().numpy()
+        # if miss is not None:
+        #     miss = miss.detach().cpu().numpy()
 
         fm_dict["0"].append(fm_val[indices_0])
         fm_dict["1"].append(fm_val[indices_1])
 
-        if hit is not None:
-            hit_dict["0"].append(hit[indices_0])
-            hit_dict["1"].append(hit[indices_1])
+        # if hit is not None:
+        #     hit_dict["0"].append(hit[indices_0])
+        #     hit_dict["1"].append(hit[indices_1])
 
-        if miss is not None:
-            miss_dict["0"].append(miss[indices_0])
-            miss_dict["1"].append(miss[indices_1])
+        # if miss is not None:
+        #     miss_dict["0"].append(miss[indices_0])
+        #     miss_dict["1"].append(miss[indices_1])
 
     if args.use_comet:
         plot_fm_histogram(fm_dict, experiment, epoch)
 
-        if hit is not None:
-            plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
+        # if hit is not None:
+        #     plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
 
-        if miss is not None:
-            plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
+        # if miss is not None:
+        #     plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
 
         experiment.log_confusion_matrix(
                 y_true=target_total,
@@ -203,6 +217,8 @@ def train(epoch):
             )
         
         experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
+        experiment.log_metric('Triplet Loss', value=total_triplet/args.batch_size, epoch=epoch)
+        experiment.log_metric('Classifier Loss', value=total_class/args.batch_size, epoch=epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
@@ -234,7 +250,7 @@ def test(epoch):
                                 torch.tensor(0, device=target.device))
 
             # Accumulate metrics
-            output, fms, _, _ = model(data, epoch, experiment)
+            output, fms, _, _ = model(data, epoch=epoch, experiment=experiment)
             test_loss += F.nll_loss(output, target, reduction='sum').item()
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
