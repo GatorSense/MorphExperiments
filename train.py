@@ -19,13 +19,14 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 from time import time
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, Dataset
 from utils.plot import *
 from utils.logger import log_weights
 from utils.custom_dataset import TripletThreesAndNotThreeWithLabel
 from pprint import pprint
 from dotenv import load_dotenv
 from models.models import *
+from sklearn.cluster import KMeans
 
 load_dotenv()
 
@@ -70,6 +71,16 @@ if args.use_comet:
     workspace="joannekim")
     experiment.log_parameters(args_dict)
 
+class CentersDataset(Dataset):
+    def __init__(self, centers):
+        self.centers = torch.tensor(centers).float()
+
+    def __len__(self):
+        return len(self.centers)
+
+    def __getitem__(self, idx):
+        return self.centers[idx], -1
+
 # Start loading data
 transform=transforms.Compose([
         transforms.ToTensor(),
@@ -86,6 +97,13 @@ train_dataset = datasets.MNIST(
 targets = train_dataset.targets
 idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
 train_subset_3 = Subset(train_dataset, idx_3)
+
+clustered = KMeans(n_clusters=10)
+images = torch.stack([x[0] for x in train_subset_3])
+images_flat = images.view(len(train_subset_3), -1)
+clustered.fit(images_flat)
+centers = clustered.cluster_centers_.reshape((10, 28, 28))
+centers_dataset = CentersDataset(centers)
 
 criterion_cls   = nn.NLLLoss()
 criterion_trip  = nn.TripletMarginLoss(margin=1000.0)
@@ -109,10 +127,10 @@ if args.use_comet:
 
 if args.model_type == 'morph':
     if args.filter_threes:
-        rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
-        selected_3 = Subset(train_subset_3, rand_index)
-        filter_list = [selected_3]
-        model = MorphTripletModel(filter_list=filter_list)
+        # rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
+        # selected_3 = Subset(train_subset_3, rand_index)
+        # filter_list = [selected_3]
+        model = MorphTripletModel(filter_list=[centers_dataset])
     else:
         model = MorphTripletModel() 
 elif args.model_type == 'conv':
