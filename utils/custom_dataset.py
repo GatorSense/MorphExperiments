@@ -1,3 +1,4 @@
+import random
 from torch.utils.data import Dataset
 import torch
 import numpy as np
@@ -54,10 +55,6 @@ class ThreesAndNotThree(Dataset):
             image, _ = self.not_three[index - len(self.threes)]
             return image, 0
         
-# datasets.py
-import random
-from torch.utils.data import Dataset
-
 class TripletThreesAndNotThree(Dataset):
     def __init__(self, not_three, threes):
         assert len(threes) > 1 and len(not_three) > 1, \

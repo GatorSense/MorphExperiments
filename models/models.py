@@ -46,7 +46,7 @@ class MorphTripletModel(nn.Module):
         anchor,
         positive=None,
         negative=None,
-        epoch: int | None = None,
+        epoch: int | None=None,
         experiment=None
     ):
         if positive is None or negative is None:
@@ -55,9 +55,14 @@ class MorphTripletModel(nn.Module):
             return logits, emb, hit, miss
 
         # Triplet path
-        anc_emb, *_ = self.encoder(anchor,   epoch, experiment)
+        anc_emb, *_ = self.encoder(anchor, epoch, experiment)
         pos_emb, *_ = self.encoder(positive, epoch, experiment)
         neg_emb, *_ = self.encoder(negative, epoch, experiment)
+
+        # if self.log_filters and experiment:
+        #     plot_morph_filters_forward(self.encoder.backbone.MNN1.K_hit, experiment, epoch, "hit")
+        #     plot_morph_filters_forward(self.encoder.backbone.MNN1.K_miss, experiment, epoch, "miss")
+
         return anc_emb, pos_emb, neg_emb
     
     def log_filters(self, t_or_f):
@@ -81,7 +86,6 @@ class MorphNet(nn.Module):
         output = x
         output, hit, miss = self.MNN1(output)
 
-        # Plot filters
         if self._log_filters and experiment:
             plot_morph_filters_forward(self.MNN1.K_hit, experiment, epoch, "hit")
             plot_morph_filters_forward(self.MNN1.K_miss, experiment, epoch, "miss")
