@@ -95,17 +95,23 @@ class MNN(nn.Module):
 
     def set_hit_filters(self, selected_3):
         new_K_hit = self.K_hit.clone()
-        for i in range(10):
-            image = selected_3[i][0][0]
+        # for i in range(10):
+        #     image = selected_3[i][0][0]
+        #     new_K_hit[i][0] = image
+        # self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
+        for i, (image, _) in enumerate(selected_3):
             new_K_hit[i][0] = image
-        self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
+        self.K_hit.data = Parameter(new_K_hit, requires_grad=True)
     
     def set_miss_filters(self, selected_3):
         new_K_miss = self.K_miss.clone()
-        for i in range(10):
-            image = selected_3[i][0][0]
+        # for i in range(10):
+        #     image = selected_3[i][0][0]
+        #     new_K_miss[i][0] = image
+        # self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
+        for i, (image, _) in enumerate(selected_3):
             new_K_miss[i][0] = image
-        self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
+        self.K_miss.data = Parameter(new_K_miss, requires_grad=True)
 
     def set_hitmiss_filters_to_3(self, selected_3):
         self.set_hit_filters(selected_3)

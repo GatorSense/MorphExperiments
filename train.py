@@ -106,7 +106,7 @@ centers = clustered.cluster_centers_.reshape((10, 28, 28))
 centers_dataset = CentersDataset(centers)
 
 criterion_cls   = nn.NLLLoss()
-criterion_trip  = nn.TripletMarginLoss(margin=1000.0)
+criterion_trip  = nn.TripletMarginLoss(margin=1.0)
 
 idx_48 = ((targets == 4) | (targets == 8)).nonzero(as_tuple=True)[0]
 idx_48 = np.random.randint(0, len(idx_48), len(train_subset_3))
@@ -189,7 +189,7 @@ def train(epoch):
         logits = model.head(emb_a)
         loss_cls = criterion_cls(logits.to(device), y.to(device))
 
-        loss = loss_trip
+        loss = loss_trip + loss_cls
 
         total_triplet = total_triplet + loss_trip
         total_class = total_class + loss_cls
