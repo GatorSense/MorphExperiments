@@ -35,7 +35,7 @@ def plot_heatmap(data, experiment, epoch):
     plt.xlabel("True label")
     plt.ylabel("Predicted Label")
     plt.xticks(ticks=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    plt.yticks(ticks=[0, 1], labels=["Not Three", "Three"])
+    plt.yticks(ticks=[0, 1], labels=["Not Five", "Five"])
     plt.title('Heatmap')
 
     for i in range(data.T.shape[0]):
@@ -206,21 +206,22 @@ def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
 def fm_histograms(fm_dict):
     plt.clf()
     plt.close()
-    figs = {}
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    ax.hist(fm_dict["0"], bins=50, alpha=0.6, label="Not Three")
+    ax.hist(fm_dict["1"], bins=50, alpha=0.6, label="Three")
+
+    ax.set_title("Feature Map Value Distributions")
+    ax.set_xlabel("Value")
+    ax.set_ylabel("Frequency")
+    ax.legend()
     
-    for key in ["0", "1"]:
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.hist(fm_dict[key], bins=50, alpha=0.75)
-        if key == "0":
-            ax.set_title(f"Feature Map Values for Not Three Images")
-        if key == "1":
-            ax.set_title(f"Feature Map Values for Three Images")
-        ax.set_xlabel("Value")
-        ax.set_ylabel("Frequency")
-        ax.set_xlim(fm_dict[key].min(), fm_dict[key].max())
-        figs[key] = fig
-    
-    return figs
+    combined_min = min(fm_dict["0"].min(), fm_dict["1"].min())
+    combined_max = max(fm_dict["0"].max(), fm_dict["1"].max())
+    ax.set_xlim(combined_min, combined_max)
+
+    return {"combined": fig}
 
 def plot_fm_histogram(fm_dict, experiment, epoch):
     fm_dict_np = {}          
@@ -228,8 +229,7 @@ def plot_fm_histogram(fm_dict, experiment, epoch):
         fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
 
     hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'FMs/Not Three Images', figure=hists["0"], step=epoch)
-    experiment.log_figure(figure_name=f'FMs/Three Images', figure=hists["1"], step=epoch)
+    experiment.log_figure(figure_name=f'FMs/Not Three Images', figure=hists["combined"], step=epoch)
 
 def fm_histograms_test(fm_dict):
     plt.clf()

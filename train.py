@@ -95,7 +95,7 @@ train_dataset = datasets.MNIST(
 )
 
 targets = train_dataset.targets
-idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
+idx_3 = (targets == 5).nonzero(as_tuple=True)[0]
 train_subset_3 = Subset(train_dataset, idx_3)
 
 clustered = KMeans(n_clusters=10)
@@ -108,7 +108,7 @@ centers_dataset = CentersDataset(centers)
 criterion_cls   = nn.NLLLoss()
 criterion_trip  = nn.TripletMarginLoss(margin=1.0)
 
-idx_48 = ((targets == 4) | (targets == 8)).nonzero(as_tuple=True)[0]
+idx_48 = ((targets == 3) | (targets == 8)).nonzero(as_tuple=True)[0]
 idx_48 = np.random.randint(0, len(idx_48), len(train_subset_3))
 not_three = Subset(train_dataset, idx_48)
 
@@ -130,9 +130,9 @@ if args.model_type == 'morph':
         # rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
         # selected_3 = Subset(train_subset_3, rand_index)
         # filter_list = [selected_3]
-        model = MorphTripletModel(filter_list=[centers_dataset])
+        model = FullMorphModel(filter_list=[centers_dataset])
     else:
-        model = MorphTripletModel() 
+        model = FullMorphModel() 
 elif args.model_type == 'conv':
     model = CNNModel()
 else:
@@ -154,7 +154,8 @@ optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
 
 def train(epoch):
-    total_class = 0.0
+    total_multi_class = 0.0
+    total_context_class = 0.0
     total_triplet = 0.0
 
     model.train()
@@ -165,13 +166,9 @@ def train(epoch):
     target_total = np.array([], dtype=int)
     output_total = np.array([], dtype=int)
     fm_dict = {"0": [], "1": []}
-    hit_dict = {"0": [], "1": []}
-    miss_dict = {"0": [], "1": []}
 
     for batch_idx, (A, P, N, y) in enumerate(train_loader):
         device = torch.device("cuda" if args.cuda else "cpu")
-
-        labels = y.detach().cpu()
 
         A, P, N = A.to(device), P.to(device), N.to(device)
         optimizer.zero_grad()
@@ -179,66 +176,48 @@ def train(epoch):
         # Only log filters for the first batch
         if (batch_idx == 0):
             model.log_filters(True)
-            emb_a, emb_p, emb_n = model(A, P, N, epoch, experiment)
+            pred_multi, pred_context, pred_triplet = model(A, P, N, epoch, experiment)
+            emb_a, emb_p, emb_n = pred_triplet
             model.log_filters(False)
         else:
-            emb_a, emb_p, emb_n = model(A, P, N, epoch, experiment)
+            pred_multi, pred_context, pred_triplet = model(A, P, N, epoch, experiment)
+            emb_a, emb_p, emb_n = pred_triplet
 
         loss_trip = criterion_trip(emb_a, emb_p, emb_n)
 
-        logits = model.head(emb_a)
-        loss_cls = criterion_cls(logits.to(device), y.to(device))
+        loss_cls_multi = criterion_cls(pred_multi.to(device), y.to(device))
+        loss_cls_context = criterion_cls(pred_context.to(device), y.to(device))
+        loss_cls = 0.5 * (loss_cls_multi + loss_cls_context)
 
-        loss = loss_trip + loss_cls
+        loss = loss_cls_multi
 
+        total_multi_class = total_multi_class + loss_cls_multi
+        total_context_class = total_context_class + loss_cls_context
         total_triplet = total_triplet + loss_trip
-        total_class = total_class + loss_cls
 
         # Compute loss and set model parameters
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
 
+        mean_pred = 0.5 * (pred_multi + pred_context)
+
         # Store predictions for confusion matrix
         target_total = np.concatenate([target_total, y.cpu().detach().numpy()], axis=None)
-        output_total = np.concatenate([output_total, logits.argmax(dim=1).cpu().detach().numpy()], axis=None)
-
-        # Computes and prints loss metrics
-        # if batch_idx % args.log_interval == 0:
-        #     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-        #         epoch, len(train_loader.dataset),
-        #         100. * batch_idx / len(train_loader), loss.item()))
+        # output_total = np.concatenate([output_total, (mean_pred).argmax(dim=1).cpu().detach().numpy()], axis=None)
+        output_total = np.concatenate([output_total, (pred_multi).argmax(dim=1).cpu().detach().numpy()], axis=None)
 
         # Store feature map values for histogram
         indices_0 = (y == 0).nonzero()[0]
         indices_1 = (y == 1).nonzero()[0]
         fm_val = emb_a.detach().cpu().numpy()
-
-        # if hit is not None:
-        #     hit = hit.detach().cpu().numpy()
-
-        # if miss is not None:
-        #     miss = miss.detach().cpu().numpy()
+        # print(emb_a.shape, emb_p.shape, emb_n.shape)
 
         fm_dict["0"].append(fm_val[indices_0])
         fm_dict["1"].append(fm_val[indices_1])
 
-        # if hit is not None:
-        #     hit_dict["0"].append(hit[indices_0])
-        #     hit_dict["1"].append(hit[indices_1])
-
-        # if miss is not None:
-        #     miss_dict["0"].append(miss[indices_0])
-        #     miss_dict["1"].append(miss[indices_1])
-
     if args.use_comet:
         plot_fm_histogram(fm_dict, experiment, epoch)
-
-        # if hit is not None:
-        #     plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
-
-        # if miss is not None:
-        #     plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
 
         experiment.log_confusion_matrix(
                 y_true=target_total,
@@ -248,9 +227,10 @@ def train(epoch):
                 file_name="train.json"
             )
         
-        experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
-        experiment.log_metric('Triplet Loss', value=total_triplet/args.batch_size, epoch=epoch)
-        experiment.log_metric('Classifier Loss', value=total_class/args.batch_size, epoch=epoch)
+        experiment.log_metric('Loss', value=(total_loss / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Triplet Loss', value=(total_triplet / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Context Classifier Loss', value=(total_context_class / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Multi-Layer Classifier Loss', value=(total_multi_class / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
     
     stop_train = time()
     print('==== Training Time ====', str(stop_train-start_train))
@@ -277,12 +257,13 @@ def test(epoch):
 
             data, target = Variable(data), Variable(target)
             original_target = target.cpu().detach().numpy()
-            target = torch.where(target == 3, 
+            target = torch.where(target == 5, 
                                 torch.tensor(1, device=target.device), 
                                 torch.tensor(0, device=target.device))
 
             # Accumulate metrics
-            output, fms, _, _ = model(data, epoch=epoch, experiment=experiment)
+            pred_multi, pred_context, _ = model(data, None, None, epoch, experiment)
+            output = 0.5 * (pred_multi + pred_context)
             test_loss += F.nll_loss(output, target, reduction='sum').item()
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
@@ -295,16 +276,16 @@ def test(epoch):
                 digit = original_target[i]
                 heatmap_data[digit][pred_np[i]] += 1
             
-            # Get feature maps for original targets < 3 and > 3
-            original_target_tensor = torch.tensor(original_target).to(fms.device)
-            indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
-            indices_4_9 = (original_target_tensor > 3).nonzero(as_tuple=True)[0]
+            # # Get feature maps for original targets < 3 and > 3
+            # original_target_tensor = torch.tensor(original_target).to(fms.device)
+            # indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
+            # indices_4_9 = (original_target_tensor > 3).nonzero(as_tuple=True)[0]
 
-            # Store feature map values in list
-            if indices_0_2.numel() > 0:
-                fms_0_2.append(fms[indices_0_2].cpu().detach().numpy())
-            if indices_4_9.numel() > 0:
-                fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
+            # # Store feature map values in list
+            # if indices_0_2.numel() > 0:
+            #     fms_0_2.append(fms[indices_0_2].cpu().detach().numpy())
+            # if indices_4_9.numel() > 0:
+            #     fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
 
         test_loss /= len(test_loader.dataset)
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
@@ -320,7 +301,7 @@ def test(epoch):
                 file_name="test.json"
             )
             plot_heatmap(heatmap_data, experiment, epoch)
-            plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch)
+            # plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch)
 
         stop_test = time()
         print('==== Test Cycle Time ====\n', str(stop_test - start_test))

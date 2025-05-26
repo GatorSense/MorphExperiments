@@ -14,13 +14,18 @@ from torch.autograd import Function
 from torch.nn import Parameter
 import torch.nn.functional as F
 
+def finite_report(tag, *tensors):
+    print(tag, [torch.isfinite(t).all().item() for t in tensors])
+
 class _Hitmiss(Function):
-    def forward(self, input, K_hit, K_miss, kernel_size, out_channels):
+    def forward(self, input, K_hit, K_miss, kernel_size, out_channels, full):
+        # finite_report("IN", input, K_hit, K_miss)
         activation = nn.LeakyReLU()
         batch_size, in_channels, ih, _ = input.size()  
         fh = ih - kernel_size + 1
         out_Fmap = in_channels * out_channels
-        num_blocks = fh * fh * in_channels
+        num_blocks = fh * fh
+        # print(input[0])
 
         # Unfold => (B, fh, fh, in_channels, k, k)
         input = input.unfold(2, kernel_size, 1) \
@@ -40,24 +45,24 @@ class _Hitmiss(Function):
 
         F_miss = F.relu(input_ - K_miss_)
         F_miss_sum = F_miss.sum(dim=(2, 3, 4, 5, 6))
+        # finite_report("SUMS", F_hit_sum, F_miss_sum)
 
-        F_map_val = F_hit_sum - F_miss_sum  # => (B, out_channels)
+        sum_size = fh * fh * in_channels * kernel_size**2 
+        F_map_val = (F_hit_sum - F_miss_sum) / sum_size  # => (B, out_channels)
 
         # Expand to match your original shape
         F_map_val_expanded = F_map_val.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # (B, out_channels, 1, 1, 1)
         F_map_val_expanded = F_map_val_expanded.expand(batch_size, out_channels,
                                                        num_blocks, 1, 1)
-        # Similarly for F_hit_list, F_miss_list:
-        F_hit_list_val = F_hit_sum.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(batch_size, out_channels,
-                                                                                    num_blocks, 1, 1)
-        F_miss_list_val = F_miss_sum.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(batch_size, out_channels,
-                                                                                      num_blocks, 1, 1)
-        # Finally reshape to (B, out_Fmap, fh, fh)
-        F_map       = F_map_val_expanded.view(batch_size, out_Fmap, fh, fh)
-        F_hit_list  = F_hit_list_val.view(batch_size, out_Fmap, fh, fh)
-        F_miss_list = F_miss_list_val.view(batch_size, out_Fmap, fh, fh)
 
-        return F.max_pool1d(torch.squeeze(F_map), 10), F_hit_list, F_miss_list
+        if full:
+            F_map = F_map_val_expanded.reshape(batch_size, -1) 
+            F_map_max, _ = F_map.max(dim=1, keepdim=True)     
+            return F_map_max  
+        else:
+            F_map = F_map_val_expanded.clone().reshape(batch_size, out_channels, fh, fh)
+            # finite_report("OUT", F_map_val_expanded)
+            return F_map
 
 class MNN(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, filter_list=None):
@@ -121,7 +126,7 @@ class MNN(nn.Module):
         self.set_hit_filters(eroded_filters)
         self.set_miss_filters(dilated_filters)
 
-    def forward(self, input):
+    def forward(self, input, full=False):
         #import pdb; pdb.set_trace()
-        return _Hitmiss().forward(input, self.K_hit, self.K_miss, self.kernel_size, self.out_channels)
+        return _Hitmiss().forward(input, self.K_hit, self.K_miss, self.kernel_size, self.out_channels, full)
 
