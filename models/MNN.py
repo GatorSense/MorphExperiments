@@ -38,6 +38,9 @@ class _Hitmiss(Function):
         K_hit_  = K_hit.unsqueeze(0).unsqueeze(2).unsqueeze(3)  # => (1, out_channels, 1, 1, in_channels, k, k)
         K_miss_ = K_miss.unsqueeze(0).unsqueeze(2).unsqueeze(3) # same shape
 
+        # print(f'input.shape: {input.detach().cpu().shape}')
+        # print(f'K_hit_.shape: {K_hit_.detach().cpu().shape}')
+
         # F_hit: shape (B, out_channels, fh, fh, in_channels, k, k)
         F_hit  = -1.0 * F.relu( (input_ - K_hit_) * -1 )
         # Sum over all of (fh, fh, in_channels, k, k) => (2,3,4,5,6)
@@ -79,17 +82,18 @@ class MNN(nn.Module):
         self.kernel_size = kernel_size
         self.K_hit = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
         self.K_miss = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
-        
-        if (filter_list):
-            if (len(filter_list) == 1):
-                self.set_hitmiss_filters_to_3(filter_list[0])
-            elif (len(filter_list) == 2):
-                self.set_hitmiss_filters_to_morphed_3(filter_list[0], filter_list[1])
-            else:
-                print("***ATTENTION***\nThe filter given to MNN layer is in the wrong format!")
-                exit()
+
+        if filter_list is not None:
+            bank = self._bank_from_tensor(filter_list)
+            with torch.no_grad():
+                self.K_hit.copy_(bank)
+                self.K_miss.copy_(bank)
+            self.K_hit.requires_grad_(True)
+            self.K_miss.requires_grad_(True)
         else:
             self.reset_parameters()
+
+        print('filter sizes', self.K_hit.shape, self.K_miss.shape)
 
     # Initializes hit and miss filters
     def reset_parameters(self):
@@ -129,4 +133,24 @@ class MNN(nn.Module):
     def forward(self, input, full=False):
         #import pdb; pdb.set_trace()
         return _Hitmiss().forward(input, self.K_hit, self.K_miss, self.kernel_size, self.out_channels, full)
+
+    def _bank_from_tensor(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Accepts [out_channels, k, k] or [out_channels, in_channels, k, k]
+        and returns [out_channels, in_channels, k, k] on param device/dtype.
+        """
+        oc, ic, k = self.out_channels, self.in_channels, self.kernel_size
+        dev, dt = self.K_hit.device, self.K_hit.dtype
+
+        if t.dim() == 3:  # [out, k, k] -> add in_channel dim
+            if t.size(0) != oc or t.size(1) != k or t.size(2) != k:
+                raise ValueError(f"Expected tensor of shape [{oc},{k},{k}], got {tuple(t.shape)}")
+            t = t.unsqueeze(1)  # -> [out, 1, k, k]
+        elif t.dim() == 4:  # [out, in, k, k]
+            if t.size(0) != oc or t.size(1) != ic or t.size(2) != k or t.size(3) != k:
+                raise ValueError(f"Expected tensor of shape [{oc},{ic},{k},{k}], got {tuple(t.shape)}")
+        else:
+            raise ValueError("filter tensor must be 3D or 4D")
+
+        return t.to(device=dev, dtype=dt)
 

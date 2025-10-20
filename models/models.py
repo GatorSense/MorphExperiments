@@ -8,16 +8,19 @@ import torch.nn.functional as F
 
 
 class FullMorphModel(nn.Module):
-    def __init__(self):
+    def __init__(self, filter_list=None):
         super().__init__()
-        self.multi_layer = MultiLayerMorph()
-        self.full_context = MorphTripletModel()
+        # self.multi_layer = MultiLayerMorph()
+        if filter_list == None:
+            self.full_context = MorphTripletModel()
+        else:
+            self.full_context = MorphTripletModel(filter_list=filter_list)
 
-    def forward(self, a, p, n, epoch, experiment):
-        pred_multi = self.multi_layer(a)
-        pred_context, _ = self.full_context(a, epoch=epoch, experiment=experiment)
-        pred_triplet = self.full_context(a, p, n, epoch=epoch, experiment=experiment)
-        return pred_multi, pred_context, pred_triplet
+    def forward(self, img, epoch, experiment):
+        # pred_multi = self.multi_layer(a)
+        pred_context, emb = self.full_context(img, epoch=epoch, experiment=experiment)
+        # pred_triplet = self.full_context(a, p, n, epoch=epoch, experiment=experiment)
+        return pred_context, emb
     
     def log_filters(self, t_or_f):
         self.full_context.encoder.backbone.log_filters(t_or_f)
@@ -46,9 +49,9 @@ class FullMorphModel(nn.Module):
 class MultiLayerMorph(nn.Module):
     def __init__(self):
         super().__init__()
-        self.CNN1 = nn.Conv2d(1, 10, 3)
+        self.CNN1 = nn.Conv2d(3, 10, 3)
         self.CNN2 = nn.Conv2d(10, 5, 3)
-        self.fc1 = nn.Linear(2880, 256)
+        self.fc1 = nn.Linear(3920, 256)
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, 2)
         self.activation = nn.LeakyReLU(negative_slope=0.1)
@@ -93,7 +96,7 @@ class MorphTripletModel(nn.Module):
     If `positive` and `negative` are also passed: returns three embeddings
     (no classifier applied) so you can compute TripletMarginLoss.
     """
-    def __init__(self, num_classes: int = 2, filter_list: Optional[list] = None):
+    def __init__(self, num_classes: int = 2, filter_list: Optional[torch.Tensor] = None):
         super().__init__()
         self.encoder = MorphEncoder(filter_list)
         self.head    = MorphHead(num_classes)
@@ -122,10 +125,10 @@ class MorphTripletModel(nn.Module):
 class MorphNet(nn.Module):
     def __init__(self, filter_list=None):
         super(MorphNet,self).__init__()
-        if (filter_list):
-            self.MNN1 = MNN(1,10,28, filter_list)
+        if filter_list != None:
+            self.MNN1 = MNN(2048,10,kernel_size=16, filter_list=filter_list)
         else:
-            self.MNN1 = MNN(1,10,28)
+            self.MNN1 = MNN(2048,10, kernel_size=16)
         self.training = True
         self.passes = 0
         self._log_filters = False
@@ -137,9 +140,9 @@ class MorphNet(nn.Module):
         output = x
         output = self.MNN1(output)
 
-        if self._log_filters and experiment:
-            plot_morph_filters_forward(self.MNN1.K_hit, experiment, epoch, "hit")
-            plot_morph_filters_forward(self.MNN1.K_miss, experiment, epoch, "miss")
+        # if self._log_filters and experiment:
+        #     plot_morph_filters_forward(self.MNN1.K_hit, experiment, epoch, "hit")
+        #     plot_morph_filters_forward(self.MNN1.K_miss, experiment, epoch, "miss")
 
         return output
 
