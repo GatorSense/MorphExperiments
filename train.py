@@ -9,6 +9,7 @@ Xu, W. (2023). Deep Morph-Convolutional Neural Network: Combining Morphological 
 
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import os
 from comet_ml import start
 import torch
@@ -20,21 +21,28 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 from time import time
 from torch.utils.data import DataLoader, Subset
+from torchvision.utils import save_image
 from utils.plot import *
 from utils.logger import log_weights
-from utils.custom_dataset import TripletThreesAndNotThreeWithLabel
+from utils.plant_dataset import BinaryLeafDataset
 from pprint import pprint
 from dotenv import load_dotenv
 from models.models import *
+from sklearn.cluster import KMeans
+import pandas as pd
+import random
+from PIL import Image
+import io
+from collections import defaultdict
 
 load_dotenv()
 
 start_whole = time()
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch MNIST with MNNV2')
-parser.add_argument('--batch-size', type=int, default=64,
+parser.add_argument('--batch-size', type=int, default=4,
                     help='input batch size for training (default: 64)')
-parser.add_argument('--test-batch-size', type=int, default=1000,
+parser.add_argument('--test-batch-size', type=int, default=8,
                     help='input batch size for testing (default: 1000)')
 parser.add_argument('--epochs', type=int, default=100,
                     help='number of epochs to train (default: 10)')
@@ -70,33 +78,93 @@ if args.use_comet:
     workspace="joannekim")
     experiment.log_parameters(args_dict)
 
+POS_LABEL = 10
+NEG_LABELS = {1, 7}
+
+def read_metadata_expand_ranges(csv_path):
+    df = pd.read_csv(csv_path)
+    filename_to_meta = {}
+    for _, row in df.iterrows():
+        start, end = map(int, str(row['filename']).split('-'))
+        for i in range(start, end + 1):
+            # fname = f"{i}.jpg"
+            fname = f"{i}.pt"
+            filename_to_meta[fname] = {
+                'label': int(row['label']),
+                'scientific_name': row['Scientific Name'],
+                'common_name': row['Common Name(s)'],
+                'url': row['URL'],
+            }
+    all_filenames = sorted(filename_to_meta.keys())
+    return all_filenames, filename_to_meta
+
 # Start loading data
 transform=transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))
+    # transforms.Resize((128, 128)),
+    transforms.ToTensor(),
+    # transforms.Normalize((0.5,), (0.5,))
 ])
 
-train_dataset = datasets.MNIST(
-    root='../data',
-    train=True,
-    download=True,
-    transform=transform
-)
+all_filenames, filename_to_meta = read_metadata_expand_ranges('data/leaves/labels.csv')
 
-targets = train_dataset.targets
-idx_3 = (targets == 3).nonzero(as_tuple=True)[0]
-train_subset_3 = Subset(train_dataset, idx_3)
+def diversity_loss_morph(morph):
+    H = morph.K_hit.data  
+    M = morph.K_miss.data 
 
-criterion_cls   = nn.NLLLoss()
-criterion_trip  = nn.TripletMarginLoss(margin=1000.0)
+    V = H.view(H.size(0), -1) # Flatten each filter
+    V = F.normalize(V, dim=1) # Normalize each one
+    G = V @ V.t() # Compute the Gram matrix
+    off_diag_H = G.cuda() - torch.eye(G.size(0)).cuda() # Don't penalize being similar to self
 
-idx_48 = ((targets == 4) | (targets == 8)).nonzero(as_tuple=True)[0]
-idx_48 = np.random.randint(0, len(idx_48), len(train_subset_3))
-not_three = Subset(train_dataset, idx_48)
+    V = M.view(M.size(0), -1) 
+    V = F.normalize(V, dim=1) 
+    G = V @ V.t()   
+    off_diag_M = G.cuda() - torch.eye(G.size(0)).cuda()
 
-test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, transform=transform),
-    batch_size=args.test_batch_size, shuffle=True, **kwargs)
+    return off_diag_H.pow(2).mean() + off_diag_M.pow(2).mean()     
+
+# single shuffle/split for the whole set
+random.seed(42)
+random.shuffle(all_filenames)
+split_idx = int(0.8 * len(all_filenames))
+train_filenames = all_filenames[:split_idx]
+test_filenames  = all_filenames[split_idx:]
+
+train_dataset = BinaryLeafDataset(train_filenames, filename_to_meta, 'data/leaves/trained_resnet',
+                                  transform=transform, mode='train')
+test_dataset  = BinaryLeafDataset(test_filenames,  filename_to_meta, 'data/leaves/trained_resnet',
+                                  transform=transform, mode='test')
+
+train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=args.cuda)
+test_loader  = DataLoader(test_dataset,  batch_size=args.test_batch_size, shuffle=False, num_workers=4, pin_memory=args.cuda)
+
+pos_imgs = []
+for imgs, labels, orig_labels, fnames in train_loader:
+    mask = (orig_labels == POS_LABEL)
+    if mask.any():
+        pos_imgs.append(imgs[mask])
+
+if len(pos_imgs) > 0:
+    pos_tensor = torch.cat(pos_imgs, dim=0)
+else:
+    pos_tensor = torch.empty(0, *next(iter(train_loader))[0].shape[1:])  # empty tensor
+
+cluster_dir = "data/leaves/10_clusters/features"
+files = sorted(os.listdir(cluster_dir))
+
+avg_images = []
+for fname in files:
+    if fname.endswith(".pt") or fname.endswith(".pth"):
+        path = os.path.join(cluster_dir, fname)
+        arr = torch.load(path, weights_only=False)  # could be np.ndarray or torch.Tensor
+        tensor = torch.as_tensor(arr)  # ensures it’s a Tensor
+        avg_images.append(tensor)
+
+# -> Tensor [10, 2048, 16, 16]
+avg_images = torch.stack(avg_images).float()
+print(avg_images.shape)
+
+criterion_cls = nn.NLLLoss()
 
 experiment = None
 if args.use_comet:
@@ -109,12 +177,9 @@ if args.use_comet:
 
 if args.model_type == 'morph':
     if args.filter_threes:
-        rand_index = (np.random.rand(10) * len(train_subset_3)).astype(int)
-        selected_3 = Subset(train_subset_3, rand_index)
-        filter_list = [selected_3]
-        model = MorphTripletModel(filter_list=filter_list)
+        model = FullMorphModel(filter_list=avg_images) 
     else:
-        model = MorphTripletModel() 
+        model = FullMorphModel() 
 elif args.model_type == 'conv':
     model = CNNModel()
 else:
@@ -123,191 +188,178 @@ else:
 if args.cuda:
     model.cuda()
 
-# remaining_indices = list(set(range(len(train_subset_3))) - set(rand_index))
-# train_subset_3 = Subset(train_subset_3, remaining_indices)
-# train_loader = DataLoader(FilterOutThrees(not_three, train_subset_3, selected_3),
-#                           args.batch_size, shuffle=True, **kwargs)
+print(model)
 
-# Create custom train loader
-train_loader = DataLoader(TripletThreesAndNotThreeWithLabel(not_three, train_subset_3),
-                                                            args.batch_size, shuffle=True, **kwargs)
+# Map numeric label -> a readable class name (Common Name (Scientific Name)) 
+label_to_name = {} 
+for _, meta in filename_to_meta.items(): 
+    lbl = int(meta['label']) 
+    if lbl not in label_to_name: 
+        cn = meta.get('common_name') or '' 
+        pretty = cn if cn else f"Label {lbl}" 
+        label_to_name[lbl] = pretty
 
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 dtype = torch.FloatTensor
 
 def train(epoch):
-    total_class = 0.0
+    total_multi_class = 0.0
+    total_context_class = 0.0
     total_triplet = 0.0
 
     model.train()
     model.training = True
     start_train = time()
     total_loss = 0.0
+    total_class_loss = 0.0
+    total_diversity_loss = 0.0
 
     target_total = np.array([], dtype=int)
     output_total = np.array([], dtype=int)
     fm_dict = {"0": [], "1": []}
-    hit_dict = {"0": [], "1": []}
-    miss_dict = {"0": [], "1": []}
 
-    for batch_idx, (A, P, N, y) in enumerate(train_loader):
+    for batch_idx, (img, label, _, _) in enumerate(train_loader):
         device = torch.device("cuda" if args.cuda else "cpu")
 
-        labels = y.detach().cpu()
-
-        A, P, N = A.to(device), P.to(device), N.to(device)
+        img, label = img.to(device), label.to(device)
         optimizer.zero_grad()
-
+        # print(img.shape, label)
         # Only log filters for the first batch
         if (batch_idx == 0):
             model.log_filters(True)
-            emb_a, emb_p, emb_n = model(A, P, N, epoch, experiment)
-            model.log_filters(False)
+            pred_multi, emb = model(img, epoch, experiment)
         else:
-            emb_a, emb_p, emb_n = model(A, P, N, epoch, experiment)
+            model.log_filters(False)
+            pred_multi, emb = model(img, epoch, experiment)
 
-        loss_trip = criterion_trip(emb_a, emb_p, emb_n)
+        # Build a mixed embedding: POS = live graph, NEG = detached (no encoder grad)
+        pos_mask = (label == 1).unsqueeze(1)          # [B, 1] bool
+        emb_neg_free = torch.where(pos_mask, emb, emb.detach())  # [B, D]
 
-        logits = model.head(emb_a)
-        loss_cls = criterion_cls(logits.to(device), y.to(device))
+        # Recompute logits only through the head so FC updates on all samples
+        logits = model.full_context.head(emb_neg_free)
 
-        loss = loss_trip
-
-        total_triplet = total_triplet + loss_trip
-        total_class = total_class + loss_cls
+        loss = criterion_cls(logits, label)
 
         # Compute loss and set model parameters
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
+        # total_class_loss += class_loss
+        total_class_loss += loss
+        # total_diversity_loss += diversity_loss
+
+        mean_pred = 0.5 * (pred_multi + pred_context)
 
         # Store predictions for confusion matrix
-        target_total = np.concatenate([target_total, y.cpu().detach().numpy()], axis=None)
-        output_total = np.concatenate([output_total, logits.argmax(dim=1).cpu().detach().numpy()], axis=None)
-
-        # Computes and prints loss metrics
-        # if batch_idx % args.log_interval == 0:
-        #     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-        #         epoch, len(train_loader.dataset),
-        #         100. * batch_idx / len(train_loader), loss.item()))
+        target_total = np.concatenate([target_total, label.cpu().detach().numpy()], axis=None)
+        output_total = np.concatenate([output_total, (pred_multi).argmax(dim=1).cpu().detach().numpy()], axis=None)
 
         # Store feature map values for histogram
-        indices_0 = (y == 0).nonzero()[0]
-        indices_1 = (y == 1).nonzero()[0]
-        fm_val = emb_a.detach().cpu().numpy()
+        # indices_0 = (label == 0).nonzero()[0]
+        # indices_1 = (label == 1).nonzero()[0]
+        # fm_val = emb_a.detach().cpu().numpy()
+        # print(emb_a.shape, emb_p.shape, emb_n.shape)
 
-        # if hit is not None:
-        #     hit = hit.detach().cpu().numpy()
-
-        # if miss is not None:
-        #     miss = miss.detach().cpu().numpy()
-
-        fm_dict["0"].append(fm_val[indices_0])
-        fm_dict["1"].append(fm_val[indices_1])
-
-        # if hit is not None:
-        #     hit_dict["0"].append(hit[indices_0])
-        #     hit_dict["1"].append(hit[indices_1])
-
-        # if miss is not None:
-        #     miss_dict["0"].append(miss[indices_0])
-        #     miss_dict["1"].append(miss[indices_1])
+        # fm_dict["0"].append(fm_val[indices_0])
+        # fm_dict["1"].append(fm_val[indices_1])
 
     if args.use_comet:
-        plot_fm_histogram(fm_dict, experiment, epoch)
-
-        # if hit is not None:
-        #     plot_hit_miss_histogram(hit_dict, "Hit", experiment, epoch)
-
-        # if miss is not None:
-        #     plot_hit_miss_histogram(miss_dict, "Miss", experiment, epoch)
+        # plot_fm_histogram(fm_dict, experiment, epoch)
 
         experiment.log_confusion_matrix(
                 y_true=target_total,
                 y_predicted=output_total,
-                labels=["Not Three", "Three"],
+                labels=["Not JAW", "JAW"],
                 title="Train Set",
                 file_name="train.json"
             )
         
-        experiment.log_metric('Loss', value=total_loss/args.batch_size, epoch=epoch)
-        experiment.log_metric('Triplet Loss', value=total_triplet/args.batch_size, epoch=epoch)
-        experiment.log_metric('Classifier Loss', value=total_class/args.batch_size, epoch=epoch)
+        experiment.log_metric('Loss', value=(total_loss / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Diversity Loss', value=(total_diversity_loss / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Classification Loss', value=(total_class_loss / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Triplet Loss', value=(total_triplet / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Context Classifier Loss', value=(total_context_class / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
+        experiment.log_metric('Multi-Layer Classifier Loss', value=(total_multi_class / len(train_loader.dataset)) * args.batch_size, epoch=epoch)
     
     stop_train = time()
+    log_embedding_histograms(epoch, train_loader, split='train')
+    log_embedding_histograms(epoch, test_loader, split='test')
     print('==== Training Time ====', str(stop_train-start_train))
+
+# After making test_filenames
+test_label_ids = sorted({filename_to_meta[f]['label'] for f in test_filenames})
+label_to_row = {lbl: i for i, lbl in enumerate(test_label_ids)}
 
 def test(epoch):
     start_test = time()
-    model.training = False
     model.eval()
-    test_loss = 0
-    correct = 0
+    device = torch.device("cuda" if args.cuda else "cpu")
 
-    target_total = np.array([], dtype=int)
-    output_total = np.array([], dtype=int)
-    heatmap_data = np.zeros((10, 2))
-    fms_0_2 = []
-    fms_4_9 = []
- 
+    total, correct = 0, 0
+    total_loss = 0.0
+
+    # rows = original numeric labels present in TEST; cols = [0=Not JAW, 1=JAW]
+    heatmap_data = np.zeros((len(test_label_ids), 2), dtype=int)
+
+    # For Comet confusion matrix (binary)
+    y_true_all, y_pred_all = [], []
+
     with torch.no_grad():
-        for data, target in test_loader:
-            if args.cuda:
-                data, target = data.cuda(), target.cuda()
-            else:
-                data, target = data.cpu(), target.cpu()
+        for data, bin_target, orig_labels, _ in test_loader:
+            data = data.to(device)
+            bin_target = bin_target.to(device)  # already 0/1 from dataset
 
-            data, target = Variable(data), Variable(target)
-            original_target = target.cpu().detach().numpy()
-            target = torch.where(target == 3, 
-                                torch.tensor(1, device=target.device), 
-                                torch.tensor(0, device=target.device))
+            # Forward
+            pred_multi, _ = model(data, epoch, experiment)  # must output shape [N, 2]
 
-            # Accumulate metrics
-            output, fms, _, _ = model(data, epoch=epoch, experiment=experiment)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()
-            pred = output.data.max(1, keepdim=True)[1]
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
-            target_total = np.concatenate([target_total, target.cpu().detach().numpy()], axis=None)
-            output_total = np.concatenate([output_total, output.argmax(dim=1).cpu().detach().numpy()], axis=None)
+            loss = F.nll_loss(pred_multi, bin_target, reduction='sum')
 
-            # Store predicted value for each MNIST class
-            pred_np = pred.cpu().detach().numpy().flatten()
-            for i in range(len(original_target)):
-                digit = original_target[i]
-                heatmap_data[digit][pred_np[i]] += 1
-            
-            # Get feature maps for original targets < 3 and > 3
-            original_target_tensor = torch.tensor(original_target).to(fms.device)
-            indices_0_2 = (original_target_tensor < 3).nonzero(as_tuple=True)[0]
-            indices_4_9 = (original_target_tensor > 3).nonzero(as_tuple=True)[0]
+            total_loss += loss.item()
 
-            # Store feature map values in list
-            if indices_0_2.numel() > 0:
-                fms_0_2.append(fms[indices_0_2].cpu().detach().numpy())
-            if indices_4_9.numel() > 0:
-                fms_4_9.append(fms[indices_4_9].cpu().detach().numpy())
+            preds = pred_multi.argmax(dim=1)
 
-        test_loss /= len(test_loader.dataset)
-        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)))
-        
-        if args.use_comet:
-            experiment.log_confusion_matrix(
-                y_true=target_total,
-                y_predicted=output_total,
-                labels=["Not Three", "Three"],
-                title="Test Set",
-                file_name="test.json"
-            )
+            correct += (preds == bin_target).sum().item()
+            total   += bin_target.size(0)
+
+            # For Comet's binary confusion matrix
+            y_true_all.extend(bin_target.detach().cpu().tolist())
+            y_pred_all.extend(preds.detach().cpu().tolist())
+
+            if epoch % 10 == 0:
+                # Update heatmap by ORIGINAL numeric label (row) vs predicted binary (col)
+                if isinstance(orig_labels, torch.Tensor):
+                    ol_np = orig_labels.detach().cpu().numpy()
+                else:
+                    # list/tuple -> numpy
+                    ol_np = np.asarray(orig_labels)
+                pr_np = preds.detach().cpu().numpy()
+
+                for ol, pr in zip(ol_np, pr_np):
+                    r = label_to_row.get(int(ol))
+                    if r is not None and pr in (0, 1):
+                        heatmap_data[r, pr] += 1
+
+    avg_loss = total_loss / max(1, total)
+    acc = correct / max(1, total)
+    print(f'\nTest set: Average loss: {avg_loss:.4f}, Accuracy: {correct}/{total} ({acc*100:.0f}%)\n')
+
+    if args.use_comet:
+        experiment.log_metric('test_loss', avg_loss, epoch=epoch)
+        experiment.log_metric('test_acc', acc, epoch=epoch)
+        experiment.log_confusion_matrix(
+            y_true=y_true_all,
+            y_predicted=y_pred_all,
+            labels=["Not Target", "Target"],
+            title="Test Set (Binary)",
+            file_name="test.json"
+        )
+
+        if epoch % 10 == 0:
+            # Numeric labels on Y-axis
             plot_heatmap(heatmap_data, experiment, epoch)
-            plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch)
 
-        stop_test = time()
-        print('==== Test Cycle Time ====\n', str(stop_test - start_test))
-
-    # Number of correct test outputs
+    print('==== Test Cycle Time ====\n', str(time() - start_test))
     return correct
 
 # Training loop
@@ -317,8 +369,7 @@ for epoch in range(1,args.epochs+1):
     accuracy[epoch] = test(epoch)
     if args.use_comet:
         experiment.log_metric("Accuracy", accuracy[epoch] / 100, epoch)
-        weights = log_weights(model)
-        experiment.log_metrics(weights)
+        experiment.log_metrics(log_weights(model))
 
 if args.model_filename is not None:
     torch.save(model, args.model_filename)

@@ -14,14 +14,14 @@ def visualize_filters(layer, dir='filters/', title="Filters"):
     for i in range(out_channels):
         for j in range(in_channels):
             # Save K_hit
-            plt.imshow(K_hit[i, j], cmap='gray', interpolation='nearest')
+            plt.imshow(K_hit[i, j], interpolation='nearest', cmap='viridis')
             plt.title(f"K_hit [{i},{j}]")
             plt.axis('off')
             plt.savefig(os.path.join(dir, f"filter_{i}_hit.png"))
             plt.clf()
 
             # Save K_miss
-            plt.imshow(K_miss[i, j], cmap='gray', interpolation='nearest')
+            plt.imshow(K_miss[i, j], interpolation='nearest', cmap='viridis')
             plt.title(f"K_miss [{i},{j}]")
             plt.axis('off')
             plt.savefig(os.path.join(dir, f"filter_{i}_miss.png"))
@@ -29,20 +29,25 @@ def visualize_filters(layer, dir='filters/', title="Filters"):
 
 def plot_heatmap(data, experiment, epoch):
     plt.clf()
+    plt.figure(figsize=(28, 16)) 
+
     heatmap = plt.imshow(data.T, cmap='viridis')
     plt.colorbar()
 
+    classes = [str(lbl) for lbl in range(1, 32)]
+    ticks = [lbl for lbl in range(1, 32)]
+
     plt.xlabel("True label")
     plt.ylabel("Predicted Label")
-    plt.xticks(ticks=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
-    plt.yticks(ticks=[0, 1], labels=["Not Three", "Three"])
+    plt.xticks(ticks=ticks, labels=classes, rotation=90)
+    plt.yticks(ticks=[0, 1], labels=["Not Target", "Target"])
     plt.title('Heatmap')
 
     for i in range(data.T.shape[0]):
         for j in range(data.T.shape[1]):
             plt.text(j, i, f"{data[j, i]:.0f}", ha='center', va='center', color='w')
 
-    experiment.log_figure(figure_name="heatmap", figure=heatmap.figure, step=epoch)
+    experiment.log_figure(figure_name="heatmap", figure=plt.gcf(), step=epoch)
 
 def plot_filters_initial(selected_3, experiment, filter_name):
     plt.clf()
@@ -171,92 +176,57 @@ def plot_conv_filters_forward(filter_layer, experiment, epoch):
 
     return fig, plt
 
-def hit_miss_histograms(morph_dict, mode):
-    figs = {}
+def log_embedding_histograms(epoch, loader, split='train'):
+    """
+    For each ORIGINAL class in `loader`, collect encoder embeddings,
+    flatten to 1-D values, and plot a histogram.
+    Upload directly to Comet without saving locally.
+    """
+    if not (args.use_comet and experiment):
+        return  # no-op if Comet is off
 
-    assert (mode == "Hit" or mode == "Miss")
-    
-    for key in ["0", "1"]:
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.hist(morph_dict[key], bins=50, alpha=0.75)
-        if key == "0":
-            ax.set_title(f"{mode} Values for Not Three Images")
-        if key == "1":
-            ax.set_title(f"{mode} Values for Three Images")
-        ax.set_xlabel("Value")
-        ax.set_ylabel("Frequency")
-        ax.set_xlim(morph_dict[key].min(), morph_dict[key].max())
-        figs[key] = fig
-    
-    return figs
+    model.eval()
+    device = torch.device("cuda" if args.cuda else "cpu")
 
-def plot_hit_miss_histogram(morph_dict, mode, experiment, epoch):
-    assert (mode == "Hit" or mode == "Miss")
+    bucket = defaultdict(list)
 
-    fm_dict_np = {}          
-    for key in morph_dict.keys():
-        fm_dict_np[key] = np.concatenate(morph_dict[key]).flatten()
+    with torch.no_grad():
+        for data, _, orig_labels, _ in loader:
+            data = data.to(device)
+            logits, emb = model(data, epoch, experiment)  # emb shape [B, D]
+            emb_flat = emb.detach().cpu().view(emb.size(0), -1)  # [B, D]
 
-    hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'{mode}/Not Three Images', figure=hists["0"], step=epoch)
-    experiment.log_figure(figure_name=f'{mode}/Three Images', figure=hists["1"], step=epoch)
-    # Add another row for threes in filter here!
-    # experiment.log_figure(figure_name=f'{mode}/Three Images in Filter', figure=hists["2"], step=epoch)
+            if isinstance(orig_labels, torch.Tensor):
+                ol = orig_labels.detach().cpu().tolist()
+            else:
+                ol = list(map(int, orig_labels))
 
-def fm_histograms(fm_dict):
-    plt.clf()
-    plt.close()
-    figs = {}
-    
-    for key in ["0", "1"]:
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.hist(fm_dict[key], bins=50, alpha=0.75)
-        if key == "0":
-            ax.set_title(f"Feature Map Values for Not Three Images")
-        if key == "1":
-            ax.set_title(f"Feature Map Values for Three Images")
-        ax.set_xlabel("Value")
-        ax.set_ylabel("Frequency")
-        ax.set_xlim(fm_dict[key].min(), fm_dict[key].max())
-        figs[key] = fig
-    
-    return figs
+            for vec, lbl in zip(emb_flat, ol):
+                bucket[int(lbl)].append(vec.numpy())
 
-def plot_fm_histogram(fm_dict, experiment, epoch):
-    fm_dict_np = {}          
-    for key in fm_dict.keys():
-        fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
+    # Make a histogram per class
+    for lbl, chunks in bucket.items():
+        if not chunks:
+            continue
+        vals = np.concatenate(chunks, axis=0)
 
-    hists = fm_histograms(fm_dict_np)
-    experiment.log_figure(figure_name=f'FMs/Not Three Images', figure=hists["0"], step=epoch)
-    experiment.log_figure(figure_name=f'FMs/Three Images', figure=hists["1"], step=epoch)
+        plt.figure()
+        plt.hist(vals, bins=50)
+        title = f"{label_to_name.get(lbl, str(lbl))} — embedding values (epoch {epoch})"
+        plt.title(title)
+        plt.xlabel("Embedding value")
+        plt.ylabel("Count")
 
-def fm_histograms_test(fm_dict):
-    plt.clf()
-    plt.close()
-    figs = {}
-    
-    for key in ["0-2", "4-9"]:
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.hist(fm_dict[key], bins=50, alpha=0.75)
-        if key == "0-2":
-            ax.set_title(f"Feature Map Values for 0-2 Images")
-        if key == "4-9":
-            ax.set_title(f"Feature Map Values for 4-9 Images")
-        ax.set_xlabel("Value")
-        ax.set_ylabel("Frequency")
-        ax.set_xlim(fm_dict[key].min(), fm_dict[key].max())
-        figs[key] = fig
-    
-    return figs
+        # Save to buffer instead of disk
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png", bbox_inches="tight", dpi=150)
+        buf.seek(0)
+        plt.close()
 
-def plot_fm_histogram_test(fms_0_2, fms_4_9, experiment, epoch):
-    fm_dict = {"0-2": fms_0_2, "4-9": fms_4_9}
-
-    fm_dict_np = {}          
-    for key in fm_dict.keys():
-        fm_dict_np[key] = np.concatenate(fm_dict[key]).flatten()
-
-    hists = fm_histograms_test(fm_dict_np)
-    experiment.log_figure(figure_name=f'test/0-2', figure=hists["0-2"], step=epoch)
-    experiment.log_figure(figure_name=f'test/4-9', figure=hists["4-9"], step=epoch)
+        # Upload to Comet
+        experiment.log_image(
+            buf,
+            name=f"{split}_emb_hist_label{lbl}",
+            step=epoch,
+        )
+        buf.close()

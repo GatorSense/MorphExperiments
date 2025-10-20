@@ -3,3 +3,5 @@ data/
 .env
 *.png
 __pycache__
+pytorchcifar/
+*.jpg

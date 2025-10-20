@@ -14,13 +14,18 @@ from torch.autograd import Function
 from torch.nn import Parameter
 import torch.nn.functional as F
 
+def finite_report(tag, *tensors):
+    print(tag, [torch.isfinite(t).all().item() for t in tensors])
+
 class _Hitmiss(Function):
-    def forward(self, input, K_hit, K_miss, kernel_size, out_channels):
+    def forward(self, input, K_hit, K_miss, kernel_size, out_channels, full):
+        # finite_report("IN", input, K_hit, K_miss)
         activation = nn.LeakyReLU()
         batch_size, in_channels, ih, _ = input.size()  
         fh = ih - kernel_size + 1
         out_Fmap = in_channels * out_channels
-        num_blocks = fh * fh * in_channels
+        num_blocks = fh * fh
+        # print(input[0])
 
         # Unfold => (B, fh, fh, in_channels, k, k)
         input = input.unfold(2, kernel_size, 1) \
@@ -33,6 +38,9 @@ class _Hitmiss(Function):
         K_hit_  = K_hit.unsqueeze(0).unsqueeze(2).unsqueeze(3)  # => (1, out_channels, 1, 1, in_channels, k, k)
         K_miss_ = K_miss.unsqueeze(0).unsqueeze(2).unsqueeze(3) # same shape
 
+        # print(f'input.shape: {input.detach().cpu().shape}')
+        # print(f'K_hit_.shape: {K_hit_.detach().cpu().shape}')
+
         # F_hit: shape (B, out_channels, fh, fh, in_channels, k, k)
         F_hit  = -1.0 * F.relu( (input_ - K_hit_) * -1 )
         # Sum over all of (fh, fh, in_channels, k, k) => (2,3,4,5,6)
@@ -40,24 +48,24 @@ class _Hitmiss(Function):
 
         F_miss = F.relu(input_ - K_miss_)
         F_miss_sum = F_miss.sum(dim=(2, 3, 4, 5, 6))
+        # finite_report("SUMS", F_hit_sum, F_miss_sum)
 
-        F_map_val = F_hit_sum - F_miss_sum  # => (B, out_channels)
+        sum_size = fh * fh * in_channels * kernel_size**2 
+        F_map_val = (F_hit_sum - F_miss_sum) / sum_size  # => (B, out_channels)
 
         # Expand to match your original shape
         F_map_val_expanded = F_map_val.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # (B, out_channels, 1, 1, 1)
         F_map_val_expanded = F_map_val_expanded.expand(batch_size, out_channels,
                                                        num_blocks, 1, 1)
-        # Similarly for F_hit_list, F_miss_list:
-        F_hit_list_val = F_hit_sum.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(batch_size, out_channels,
-                                                                                    num_blocks, 1, 1)
-        F_miss_list_val = F_miss_sum.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).expand(batch_size, out_channels,
-                                                                                      num_blocks, 1, 1)
-        # Finally reshape to (B, out_Fmap, fh, fh)
-        F_map       = F_map_val_expanded.view(batch_size, out_Fmap, fh, fh)
-        F_hit_list  = F_hit_list_val.view(batch_size, out_Fmap, fh, fh)
-        F_miss_list = F_miss_list_val.view(batch_size, out_Fmap, fh, fh)
 
-        return F.max_pool1d(torch.squeeze(F_map), 10), F_hit_list, F_miss_list
+        if full:
+            F_map = F_map_val_expanded.reshape(batch_size, -1) 
+            F_map_max, _ = F_map.max(dim=1, keepdim=True)     
+            return F_map_max  
+        else:
+            F_map = F_map_val_expanded.clone().reshape(batch_size, out_channels, fh, fh)
+            # finite_report("OUT", F_map_val_expanded)
+            return F_map
 
 class MNN(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, filter_list=None):
@@ -74,17 +82,18 @@ class MNN(nn.Module):
         self.kernel_size = kernel_size
         self.K_hit = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
         self.K_miss = Parameter(torch.Tensor(out_channels, in_channels, kernel_size, kernel_size))
-        
-        if (filter_list):
-            if (len(filter_list) == 1):
-                self.set_hitmiss_filters_to_3(filter_list[0])
-            elif (len(filter_list) == 2):
-                self.set_hitmiss_filters_to_morphed_3(filter_list[0], filter_list[1])
-            else:
-                print("***ATTENTION***\nThe filter given to MNN layer is in the wrong format!")
-                exit()
+
+        if filter_list is not None:
+            bank = self._bank_from_tensor(filter_list)
+            with torch.no_grad():
+                self.K_hit.copy_(bank)
+                self.K_miss.copy_(bank)
+            self.K_hit.requires_grad_(True)
+            self.K_miss.requires_grad_(True)
         else:
             self.reset_parameters()
+
+        print('filter sizes', self.K_hit.shape, self.K_miss.shape)
 
     # Initializes hit and miss filters
     def reset_parameters(self):
@@ -95,17 +104,23 @@ class MNN(nn.Module):
 
     def set_hit_filters(self, selected_3):
         new_K_hit = self.K_hit.clone()
-        for i in range(10):
-            image = selected_3[i][0][0]
+        # for i in range(10):
+        #     image = selected_3[i][0][0]
+        #     new_K_hit[i][0] = image
+        # self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
+        for i, (image, _) in enumerate(selected_3):
             new_K_hit[i][0] = image
-        self.K_hit.data = Parameter(new_K_hit.detach(), requires_grad=True)
+        self.K_hit.data = Parameter(new_K_hit, requires_grad=True)
     
     def set_miss_filters(self, selected_3):
         new_K_miss = self.K_miss.clone()
-        for i in range(10):
-            image = selected_3[i][0][0]
+        # for i in range(10):
+        #     image = selected_3[i][0][0]
+        #     new_K_miss[i][0] = image
+        # self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
+        for i, (image, _) in enumerate(selected_3):
             new_K_miss[i][0] = image
-        self.K_miss.data = Parameter(new_K_miss.detach(), requires_grad=True)
+        self.K_miss.data = Parameter(new_K_miss, requires_grad=True)
 
     def set_hitmiss_filters_to_3(self, selected_3):
         self.set_hit_filters(selected_3)
@@ -115,7 +130,27 @@ class MNN(nn.Module):
         self.set_hit_filters(eroded_filters)
         self.set_miss_filters(dilated_filters)
 
-    def forward(self, input):
+    def forward(self, input, full=False):
         #import pdb; pdb.set_trace()
-        return _Hitmiss().forward(input, self.K_hit, self.K_miss, self.kernel_size, self.out_channels)
+        return _Hitmiss().forward(input, self.K_hit, self.K_miss, self.kernel_size, self.out_channels, full)
+
+    def _bank_from_tensor(self, t: torch.Tensor) -> torch.Tensor:
+        """
+        Accepts [out_channels, k, k] or [out_channels, in_channels, k, k]
+        and returns [out_channels, in_channels, k, k] on param device/dtype.
+        """
+        oc, ic, k = self.out_channels, self.in_channels, self.kernel_size
+        dev, dt = self.K_hit.device, self.K_hit.dtype
+
+        if t.dim() == 3:  # [out, k, k] -> add in_channel dim
+            if t.size(0) != oc or t.size(1) != k or t.size(2) != k:
+                raise ValueError(f"Expected tensor of shape [{oc},{k},{k}], got {tuple(t.shape)}")
+            t = t.unsqueeze(1)  # -> [out, 1, k, k]
+        elif t.dim() == 4:  # [out, in, k, k]
+            if t.size(0) != oc or t.size(1) != ic or t.size(2) != k or t.size(3) != k:
+                raise ValueError(f"Expected tensor of shape [{oc},{ic},{k},{k}], got {tuple(t.shape)}")
+        else:
+            raise ValueError("filter tensor must be 3D or 4D")
+
+        return t.to(device=dev, dtype=dt)
 
